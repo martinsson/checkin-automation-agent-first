@@ -163,7 +163,7 @@ async def cmd_poll():
         log.info("Draft created. Open /review to approve or reject it.")
 
 
-async def cmd_demo(intent: str, requested_time: str, cleaner_reply: str):
+async def cmd_demo(intent: str, requested_time: str, cleaner_reply: str, *, guest_message: str | None = None):
     """
     Full end-to-end demo that runs entirely in-process.
     No real emails are sent or read — the cleaner reply is injected directly.
@@ -199,7 +199,9 @@ async def cmd_demo(intent: str, requested_time: str, cleaner_reply: str):
     guest_name = "Alice Dupont"
     property_name = "Apartment Les Pins"
 
-    if intent == "early_checkin":
+    if guest_message:
+        message_summary = guest_message
+    elif intent == "early_checkin":
         message_summary = (
             f"Hi, I was hoping to arrive at {requested_time} instead of 5pm. "
             "My flight lands early in the morning. Is that possible?"
@@ -271,14 +273,32 @@ async def cmd_demo(intent: str, requested_time: str, cleaner_reply: str):
         return
 
     if last_event and last_event.event_type == "cleaner_email_sent":
+        from src.communication.email_notifier import _make_subject
+        from src.ports.cleaner import CleanerQuery
         import json
         payload = last_event.payload if isinstance(last_event.payload, dict) else json.loads(last_event.payload)
+        # Reconstruct the email body that was sent (same logic as the notifier)
+        q = CleanerQuery(
+            request_id=request_id,
+            cleaner_name="l'équipe ménage",
+            guest_name=guest_name,
+            property_name=property_name,
+            request_type=intent,
+            original_time="17h00" if intent == "early_checkin" else "11h00",
+            requested_time=requested_time,
+            date=str(__import__("datetime").date.today()),
+            message=payload.get("message", ""),
+        )
+        from src.communication.email_notifier import EmailCleanerNotifier
+        subject = _make_subject(request_id, intent)
+        body = EmailCleanerNotifier._build_body(q)
         print(f"\n{SEP}")
         print("EMAIL TO CLEANER (dry-run — not actually sent)")
         print(SEP)
-        # The dry-run notifier logs the body; reconstruct it from the query fields
-        print(f"  Subject : [checkin-req:{request_id}] Guest {'early check-in' if intent == 'early_checkin' else 'late checkout'} request")
-        print(f"  Tracking: {payload.get('tracking_id', 'n/a')}")
+        print(f"  Objet : {subject}")
+        print()
+        for line in body.splitlines():
+            print(f"  {line}")
         print()
 
     # ── Step 2: inject simulated cleaner reply ───────────────────────────────
@@ -313,6 +333,44 @@ async def cmd_demo(intent: str, requested_time: str, cleaner_reply: str):
         print("\n[No draft created — agent may have called wait]")
 
 
+# ── Named scenarios ────────────────────────────────────────────────────────────
+# Each entry: (intent, requested_time, guest_message_override_or_None, cleaner_reply)
+_SCENARIOS: dict[str, tuple] = {
+    # 1 — feasible, cleaner says yes
+    "yes": (
+        "early_checkin",
+        "13h",
+        None,
+        "Pas de problème, je finis vers 12h30, le logement sera prêt pour 13h.",
+    ),
+    # 2 — feasible ask, cleaner can't do requested time but offers 14h instead
+    "partial": (
+        "early_checkin",
+        "13h",
+        None,
+        "Je ne peux pas finir pour 13h, j'ai un autre logement avant. "
+        "En revanche je peux être prêt pour 14h, ça vous convient ?",
+    ),
+    # 3 — feasible ask, cleaner completely unavailable that day
+    "no": (
+        "early_checkin",
+        "13h",
+        None,
+        "Désolée, je suis complètement prise ce jour-là, impossible de faire le ménage plus tôt.",
+    ),
+    # 4 — guest arriving by train, vague request; cleaner offers 14h
+    "train": (
+        "early_checkin",
+        "en avance",
+        (
+            "Bonjour, nous arrivons en train et notre train arrive à 11h. "
+            "Serait-il possible d'accéder à l'appartement dès notre arrivée ?"
+        ),
+        "Je peux avoir tout prêt pour 14h, pas avant.",
+    ),
+}
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ("trigger", "poll", "demo"):
         print(__doc__)
@@ -324,17 +382,34 @@ def main():
     elif cmd == "poll":
         asyncio.run(cmd_poll())
     else:
-        parser = argparse.ArgumentParser(prog="simulate.py demo")
+        parser = argparse.ArgumentParser(
+            prog="simulate.py demo",
+            description=(
+                "Run a full in-process demo. Use --scenario for preset cases:\n"
+                + "\n".join(f"  {k}" for k in _SCENARIOS)
+            ),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
         parser.add_argument("demo")
+        parser.add_argument(
+            "--scenario",
+            choices=list(_SCENARIOS),
+            help="Preset scenario (overrides --intent / --time / --cleaner-reply)",
+        )
         parser.add_argument("--intent", choices=["early_checkin", "late_checkout"], default="early_checkin")
-        parser.add_argument("--time", default="10am", dest="requested_time")
+        parser.add_argument("--time", default="13h", dest="requested_time")
         parser.add_argument(
             "--cleaner-reply",
-            default="Yes, no problem, I can finish by 12:30 so 1pm check-in is fine.",
+            default="Pas de problème, je finis vers 12h30, le logement sera prêt pour 13h.",
             help="Simulated cleaner reply text",
         )
         args = parser.parse_args()
-        asyncio.run(cmd_demo(args.intent, args.requested_time, args.cleaner_reply))
+
+        if args.scenario:
+            intent, req_time, guest_msg_override, cleaner_reply = _SCENARIOS[args.scenario]
+            asyncio.run(cmd_demo(intent, req_time, cleaner_reply, guest_message=guest_msg_override))
+        else:
+            asyncio.run(cmd_demo(args.intent, args.requested_time, args.cleaner_reply))
 
 
 if __name__ == "__main__":

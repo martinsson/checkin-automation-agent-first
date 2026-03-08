@@ -26,8 +26,8 @@ _IMAP_FOLDER = "INBOX"
 
 def _make_subject(request_id: str, intent: str) -> str:
     tag = _SUBJECT_TAG.format(request_id=request_id)
-    label = "early check-in" if intent == "early_checkin" else "late checkout"
-    return f"{tag} Guest {label} request"
+    label = "arrivée anticipée" if intent == "early_checkin" else "départ tardif"
+    return f"{tag} Demande de {label} d'un voyageur"
 
 
 def _extract_request_id(subject: str) -> str | None:
@@ -148,28 +148,28 @@ class EmailCleanerNotifier(CleanerNotifier):
     @staticmethod
     def _build_body(query: CleanerQuery) -> str:
         lines = [
-            f"Hi {query.cleaner_name},",
+            f"Bonjour {query.cleaner_name},",
             "",
-            f"We have a guest request for {query.property_name}.",
+            f"Nous avons une demande de voyageur pour {query.property_name}.",
             "",
         ]
         if query.request_type == "early_checkin":
-            lines.append(f"Guest {query.guest_name} would like to check in early on {query.date}.")
+            lines.append(f"Le voyageur {query.guest_name} souhaite arriver tôt le {query.date}.")
         else:
-            lines.append(f"Guest {query.guest_name} would like to check out late on {query.date}.")
+            lines.append(f"Le voyageur {query.guest_name} souhaite partir tard le {query.date}.")
 
         if query.original_time:
-            lines.append(f"Scheduled time: {query.original_time}")
+            lines.append(f"Heure prévue : {query.original_time}")
         if query.requested_time:
-            lines.append(f"Requested time: {query.requested_time}")
+            lines.append(f"Heure demandée : {query.requested_time}")
 
         lines += [
             "",
             query.message,
             "",
-            "Could you let us know if this is possible? Please reply to this email.",
+            "Pouvez-vous nous dire si c'est possible ? Répondez simplement à cet e-mail.",
             "",
-            "Thanks!",
+            "Merci !",
         ]
         return "\n".join(lines)
 
