@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
         imap_port=int(os.environ.get("EMAIL_IMAP_PORT", os.environ.get("IMAP_PORT", "993"))),
         cleaner_email=os.environ.get("CLEANER_EMAIL", ""),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        dry_run=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
     )
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier)
 

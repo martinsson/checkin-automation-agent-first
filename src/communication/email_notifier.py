@@ -55,6 +55,7 @@ class EmailCleanerNotifier(CleanerNotifier):
         imap_port: int,
         cleaner_email: str,
         anthropic_api_key: str | None = None,
+        dry_run: bool = False,
     ):
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
@@ -63,6 +64,7 @@ class EmailCleanerNotifier(CleanerNotifier):
         self._imap_host = imap_host
         self._imap_port = imap_port
         self._cleaner_email = cleaner_email
+        self._dry_run = dry_run
         # Track which message UIDs we've already processed
         self._seen_uids: set[int] = set()
 
@@ -77,6 +79,13 @@ class EmailCleanerNotifier(CleanerNotifier):
         msg["To"] = self._cleaner_email
         msg["Subject"] = subject
         msg["Message-ID"] = message_id
+
+        if self._dry_run:
+            log.info(
+                "[DRY RUN] Would send email to %s\nSubject: %s\n\n%s",
+                self._cleaner_email, subject, body,
+            )
+            return message_id
 
         try:
             with smtplib.SMTP(self._smtp_host, self._smtp_port) as smtp:
