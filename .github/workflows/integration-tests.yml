@@ -24,3 +24,18 @@ jobs:
 
       - name: Run tests
         run: make test
+        env:
+          REVIEW_TOKEN: ${{ secrets.REVIEW_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
+          EMAIL_SMTP_PORT: ${{ secrets.EMAIL_SMTP_PORT }}
+          EMAIL_IMAP_HOST: ${{ secrets.EMAIL_IMAP_HOST }}
+          EMAIL_IMAP_PORT: ${{ secrets.EMAIL_IMAP_PORT }}
+          CLEANER_EMAIL: ${{ secrets.CLEANER_EMAIL }}
+          CLEANER_NAME: ${{ secrets.CLEANER_NAME }}
+          SMOOBU_API_KEY: ${{ secrets.SMOOBU_API_KEY }}
+          SMOOBU_APARTMENT_ID: ${{ secrets.SMOOBU_APARTMENT_ID }}
+          DB_PATH: ":memory:"
+          DRY_RUN: "true"
