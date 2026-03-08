@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS seen_messages (
     seen_at        TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS seen_action_items (
+    action_item_id TEXT PRIMARY KEY,
+    seen_at        TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS requests (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id INTEGER NOT NULL,
@@ -77,7 +82,7 @@ def _parse_dt(s: str) -> datetime:
 class SqliteRequestMemory(RequestMemory):
 
     def __init__(self, db_path: str = "checkin.db"):
-        self._conn = sqlite3.connect(db_path)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         for migration in _MIGRATIONS:
@@ -100,6 +105,22 @@ class SqliteRequestMemory(RequestMemory):
             "INSERT OR IGNORE INTO seen_messages (message_id, reservation_id, seen_at)"
             " VALUES (?, ?, ?)",
             (message_id, reservation_id, _now()),
+        )
+        self._conn.commit()
+
+    # -- action-item dedup (webhook idempotency) ------------------------------
+
+    async def has_action_item_been_seen(self, action_item_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM seen_action_items WHERE action_item_id = ?", (action_item_id,)
+        ).fetchone()
+        return row is not None
+
+    async def mark_action_item_seen(self, action_item_id: str) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO seen_action_items (action_item_id, seen_at)"
+            " VALUES (?, ?)",
+            (action_item_id, _now()),
         )
         self._conn.commit()
 
