@@ -115,4 +115,45 @@ async def hostbuddy_webhook(request: Request):
         property_name=payload.property_name,
     )
 
+    return JSONResponse({"status": "accepted", "request_id": request_id})
+
+
+# ---------------------------------------------------------------------------
+# Cleaner reply injection (for testing without real IMAP)
+# ---------------------------------------------------------------------------
+
+
+class CleanerReplyPayload(BaseModel):
+    """Inject a cleaner reply to continue the agent flow."""
+
+    model_config = {"extra": "ignore"}
+
+    reservation_id: int
+    request_id: str
+    reply_text: str
+
+
+@router.post("/webhook/cleaner-reply")
+async def cleaner_reply_webhook(request: Request):
+    """Inject a cleaner reply event and re-run the agent."""
+    raw = None
+    try:
+        raw = await request.json()
+        payload = CleanerReplyPayload.model_validate(raw)
+    except ValidationError as exc:
+        log.warning("cleaner-reply: invalid payload — %s — raw: %s", exc, raw)
+        return JSONResponse(status_code=422, content={"error": "invalid payload"})
+    except Exception as exc:
+        log.warning("cleaner-reply: failed to parse body — %s", exc)
+        return JSONResponse(status_code=422, content={"error": "parse error"})
+
+    agent = request.app.state.agent
+
+    await agent.run(
+        reservation_id=payload.reservation_id,
+        event_type="cleaner_reply",
+        event_payload={"raw_text": payload.reply_text},
+        request_id=payload.request_id,
+    )
+
     return JSONResponse({"status": "accepted"})

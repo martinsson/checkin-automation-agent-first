@@ -99,3 +99,21 @@ async def event_log(reservation_id: int, request: Request):
         }
         for e in events
     ])
+
+
+@router.get("/requests/{reservation_id}")
+async def request_list(reservation_id: int, request: Request):
+    """Return all requests for a reservation (JSON)."""
+    memory = request.app.state.memory
+    history = await memory.get_history(reservation_id)
+    return JSONResponse([
+        {
+            "request_id": r.request_id,
+            "intent": r.intent,
+            "status": r.status.value if hasattr(r.status, "value") else r.status,
+            "guest_name": r.guest_name,
+            "property_name": r.property_name,
+            "guest_message": r.guest_message,
+        }
+        for r in history
+    ])
