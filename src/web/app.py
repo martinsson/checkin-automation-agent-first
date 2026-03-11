@@ -2,7 +2,7 @@
 FastAPI application for draft review.
 
 Start with:
-    uvicorn src.web.app:app --host 0.0.0.0 --port 8000
+    uvicorn src.web.app:app --host 0.0.0.0 --port 8001 --reload
 
 Required environment variables:
     REVIEW_TOKEN  — pre-shared token for owner login
@@ -13,7 +13,10 @@ import logging
 import os
 import sys
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+load_dotenv()  # load .env before anything reads env vars
 
 from src.adapters.sqlite_memory import SqliteRequestMemory
 from src.web.auth import AuthMiddleware
@@ -27,8 +30,7 @@ log = logging.getLogger(__name__)
 def _require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        print(f"ERROR: environment variable {name!r} is not set.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Environment variable {name!r} is not set.")
     return value
 
 
@@ -43,18 +45,19 @@ def create_app() -> FastAPI:
     from src.communication.email_notifier import EmailCleanerNotifier
 
     cleaner_notifier = EmailCleanerNotifier(
-        smtp_host=os.environ.get("SMTP_HOST", ""),
-        smtp_port=int(os.environ.get("SMTP_PORT", "587")),
-        smtp_user=os.environ.get("SMTP_USER", ""),
-        smtp_password=os.environ.get("SMTP_PASSWORD", ""),
-        imap_host=os.environ.get("IMAP_HOST", ""),
-        imap_port=int(os.environ.get("IMAP_PORT", "993")),
+        smtp_host=os.environ.get("EMAIL_SMTP_HOST", os.environ.get("SMTP_HOST", "")),
+        smtp_port=int(os.environ.get("EMAIL_SMTP_PORT", os.environ.get("SMTP_PORT", "587"))),
+        smtp_user=os.environ.get("EMAIL_USER", os.environ.get("SMTP_USER", "")),
+        smtp_password=os.environ.get("EMAIL_PASSWORD", os.environ.get("SMTP_PASSWORD", "")),
+        imap_host=os.environ.get("EMAIL_IMAP_HOST", os.environ.get("IMAP_HOST", "")),
+        imap_port=int(os.environ.get("EMAIL_IMAP_PORT", os.environ.get("IMAP_PORT", "993"))),
         cleaner_email=os.environ.get("CLEANER_EMAIL", ""),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        dry_run=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
     )
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier)
 
-    application = FastAPI(title="Checking Review", docs_url=None, redoc_url=None)
+    application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
     application.state.review_token = review_token
     application.state.memory = memory
     application.state.agent = agent

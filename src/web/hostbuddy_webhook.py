@@ -61,18 +61,14 @@ async def hostbuddy_webhook(request: Request):
     memory = request.app.state.memory
     agent = request.app.state.agent
 
-    # Idempotency: if this action_item_id is already in the event log, skip
-    existing_events = await memory.get_events(reservation_id)
-    for event in existing_events:
-        if (
-            event.event_type == "hostbuddy_action_item"
-            and event.payload.get("action_item_id") == payload.action_item_id
-        ):
-            log.info(
-                "HostBuddy webhook: duplicate action_item_id=%s — skipping",
-                payload.action_item_id,
-            )
-            return JSONResponse({"status": "duplicate"})
+    # Idempotency: mark action_item_id on first delivery, reject duplicates
+    if await memory.has_action_item_been_seen(payload.action_item_id):
+        log.info(
+            "HostBuddy webhook: duplicate action_item_id=%s — skipping",
+            payload.action_item_id,
+        )
+        return JSONResponse({"status": "duplicate"})
+    await memory.mark_action_item_seen(payload.action_item_id)
 
     # Look up the existing request for this reservation+intent (may already exist from
     # a previous cycle), or we'll create one inline if needed.

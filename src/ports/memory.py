@@ -71,6 +71,18 @@ class RequestMemory(ABC):
         """Record that this message_id has been classified."""
         ...
 
+    # -- action-item dedup (webhook idempotency) ------------------------------
+
+    @abstractmethod
+    async def has_action_item_been_seen(self, action_item_id: str) -> bool:
+        """True if this HostBuddy action_item_id was already processed."""
+        ...
+
+    @abstractmethod
+    async def mark_action_item_seen(self, action_item_id: str) -> None:
+        """Record that this action_item_id has been processed."""
+        ...
+
     # -- request tracking ----------------------------------------------------
 
     @abstractmethod
