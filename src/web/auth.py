@@ -33,8 +33,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
 
-        # Public paths and webhook always pass through
-        if path in _PUBLIC_PATHS or path.startswith("/webhook/"):
+        # Public paths, webhooks, and API endpoints pass through
+        if (
+            path in _PUBLIC_PATHS
+            or path.startswith("/webhook/")
+            or path.startswith("/events/")
+            or path.startswith("/requests/")
+        ):
             return await call_next(request)
 
         # Check session cookie
