@@ -3,7 +3,7 @@
 # Hetzner server — configure 'hetzner' alias in ~/.ssh/config, or override:
 #   make deploy SERVER=root@1.2.3.4
 SERVER    ?= hetzner
-REMOTE_DIR := /opt/checkin-automation-agent-first
+REMOTE_DIR := /home/app/checkin-automation-agent-first
 
 install:
 	pip install -r requirements.txt

@@ -1,15 +1,4 @@
 services:
-  daemon:
-    build: .
-    image: checkin-daemon
-    command: python scripts/run.py
-    env_file: .env
-    environment:
-      DB_PATH: /data/checkin.db
-    volumes:
-      - data:/data
-    restart: unless-stopped
-
   web:
     build: .
     image: checkin-web
