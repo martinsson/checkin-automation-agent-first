@@ -23,4 +23,5 @@ _TEST_DEFAULTS = {
     "DRY_RUN": "true",
 }
 for _key, _val in _TEST_DEFAULTS.items():
-    os.environ.setdefault(_key, _val)
+    if not os.environ.get(_key):   # covers both missing AND empty-string (CI secrets not configured)
+        os.environ[_key] = _val
