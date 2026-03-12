@@ -23,10 +23,40 @@ async def review_list(request: Request):
     else:
         items = []
         for d in drafts:
+            # Load events to show context (guest request + cleaner email + cleaner reply)
+            events = await memory.get_events(d.reservation_id)
+            context_html = ""
+            for e in events:
+                if e.event_type == "hostbuddy_action_item":
+                    p = e.payload
+                    context_html += f"""
+<div style="background:#e8f4fd;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #2196F3">
+  <strong>Guest request</strong> ({p.get('category', '')})<br>
+  Guest: {p.get('guest_name', '')} — Property: {p.get('property_name', '')}<br>
+  <em>{p.get('message_summary', '')}</em>
+</div>"""
+                elif e.event_type == "cleaner_email_sent":
+                    p = e.payload
+                    context_html += f"""
+<div style="background:#fff3e0;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #FF9800">
+  <strong>Email sent to cleaner</strong> (date: {p.get('date', '')})<br>
+  <pre style="margin:0.3em 0;white-space:pre-wrap">{p.get('message', '')}</pre>
+</div>"""
+                elif e.event_type == "cleaner_reply":
+                    p = e.payload
+                    context_html += f"""
+<div style="background:#e8f5e9;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #4CAF50">
+  <strong>Cleaner reply</strong><br>
+  <em>{p.get('raw_text', '')}</em>
+</div>"""
+
             items.append(f"""
 <div style="border:1px solid #ccc; margin:1em; padding:1em;">
   <strong>Draft #{d.draft_id}</strong> — reservation {d.reservation_id} — {d.intent} — {d.step}<br>
   <em>{d.created_at.strftime('%Y-%m-%d %H:%M UTC')}</em>
+  <h4 style="margin:0.8em 0 0.3em">Context</h4>
+  {context_html}
+  <h4 style="margin:0.8em 0 0.3em">Proposed reply to guest</h4>
   <pre style="background:#f5f5f5;padding:1em">{d.draft_body}</pre>
   <form method="post" action="/review/{d.draft_id}/approve" style="display:inline">
     <button type="submit" style="background:green;color:white;padding:.5em 1em">Approve &amp; Send</button>

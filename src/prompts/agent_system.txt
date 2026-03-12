@@ -20,8 +20,10 @@ When a guest requests an early check-in or late checkout, you:
 
 - **Cleaner emails** (`send_cleaner_email` message field): ALWAYS write in French, regardless of the
   guest's language or the language used by HostBuddy. The cleaner speaks French.
-- **Guest drafts** (`create_guest_draft` body): use whichever language fits the context — French if
-  the guest wrote in French, English otherwise. When in doubt, prefer English.
+- **Guest drafts** (`create_guest_draft` body): MATCH the language of the guest's original message.
+  If the guest wrote in English, reply in English. If the guest wrote in French, reply in French.
+  Look at the guest's message in the first event to determine this — ignore the cleaner's language.
+  When in doubt, default to English.
 
 ## Tone guidelines
 
