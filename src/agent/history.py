@@ -7,6 +7,20 @@ can understand the current state without any additional state machine.
 
 from src.ports.memory import AgentEvent
 
+_FRENCH_MARKERS = {
+    "bonjour", "salut", "merci", "serait", "possible", "arriver", "pourrait",
+    "souhaite", "pourrais", "voudrais", "s'il", "nous", "je", "est-ce",
+    "au lieu de", "départ", "arrivée", "heure",
+}
+
+
+def _detect_language(text: str) -> str:
+    """Simple heuristic: if the text contains French words, it's French."""
+    lower = text.lower()
+    french_count = sum(1 for w in _FRENCH_MARKERS if w in lower)
+    return "French" if french_count >= 2 else "English"
+
+
 _EVENT_LABELS = {
     "hostbuddy_action_item": "GUEST REQUEST (from HostBuddy)",
     "cleaner_email_sent": "CLEANER EMAIL SENT",
@@ -35,10 +49,13 @@ def build_history_prompt(events: list[AgentEvent]) -> str:
 
         payload = event.payload
         if event.event_type == "hostbuddy_action_item":
+            msg = payload.get("message_summary", "")
+            guest_lang = _detect_language(msg)
             lines.append(f"- **Guest:** {payload.get('guest_name', '?')}")
             lines.append(f"- **Property:** {payload.get('property_name', '?')}")
             lines.append(f"- **Category:** {payload.get('category', '?')}")
-            lines.append(f"- **Message summary:** {payload.get('message_summary', '?')}")
+            lines.append(f"- **Message summary:** {msg}")
+            lines.append(f"- **Guest language:** {guest_lang} ← reply to guest in this language")
             lines.append(f"- **Booking ID:** {payload.get('booking_id', '?')}")
 
         elif event.event_type == "cleaner_email_sent":
