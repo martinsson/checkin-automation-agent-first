@@ -55,6 +55,66 @@ Key ones for guest messaging:
 | Per-property text slot N (1–8) | `[PROPERTYTEMPLATEn]` (plain) or `[PROPERTYTEMPLATEnBR]` (HTML — line breaks become `<br>`) |
 | Per-room text slot N | `[ROOMTEMPLATEn]` / `[ROOMTEMPLATEnBR]` |
 
+## Booking status semantics (the `new` vs `confirmed` vs `New (Confirmed)` trap)
+
+Beds24 stores 6 status codes. API string → numeric code → bookedit dropdown label:
+
+| API | code | UI label | Meaning |
+|---|---|---|---|
+| `inquiry` | 5 | Inquiry | Question only — **does not block** the room |
+| `request` | 3 | Request | On-request — blocks until host accepts |
+| `new` | 2 | New | Confirmed reservation, **not yet opened by host** |
+| `confirmed` | 1 | New (Confirmed) / Confirmed | Same reservation, host has opened+saved it |
+| `cancelled` | 0 | Cancelled | — |
+| `black` | 4 | Black | Manual room block, no guest |
+
+**`new` → `confirmed` is purely a "have you handled it yet" workflow flag**, not a payment state. Per the wiki ([Setting/bookingsstatus](https://wiki.beds24.com/index.php?title=Setting/bookingsstatus)): *"New are bookings which have not been opened to view. Once you open them and save or update them the status will change to Confirmed."* The booking is just as real either way.
+
+**"New (Confirmed)"** is the *UI label* the booking-edit dropdown sometimes uses for code 1. Read it as two perspectives: "**New**" (Beds24's status — you haven't handled it) + "**(Confirmed)**" (the channel's view — Airbnb has confirmed it with the guest). Not a separate status — same underlying code 1.
+
+**Implications for auto-action filters:**
+- Filter `Confirmed` (code 1) → matches only bookings you've already opened. Most fresh Airbnb arrivals **won't match** until you click through them.
+- Filter `New` (code 2) → matches fresh, unhandled bookings. **Use this for "fire as soon as the booking lands" rules.**
+- If an upstream auto-action sets status `new → confirmed` before your rule evaluates, your `New` filter will miss it. Clone the rule with filter `Confirmed` as a belt-and-braces second path.
+
+The Test tab labels make this debuggable: a filter mismatch shows as *"FAIL — booking has wrong status"*.
+
+## Modifying bookings via API
+
+- **Updates use POST, not PATCH.** `PATCH /bookings` returns HTTP 500 "Could not process request". Use `POST /bookings` with `[{"id": <bookingId>, ...fields}]`.
+- **Deletion requires cancellation first.** `DELETE /bookings?id=<id>` on an active booking returns *"cannot delete active bookings"*. Two-step:
+  ```bash
+  curl -X POST  -H "token: $TOKEN" -H "Content-Type: application/json" \
+       -d '[{"id":N,"status":"cancelled","allowAutoAction":"disable"}]' \
+       https://api.beds24.com/v2/bookings
+  curl -X DELETE -H "token: $TOKEN" \
+       "https://api.beds24.com/v2/bookings?id=N"
+  ```
+  Setting `allowAutoAction:"disable"` in the same PATCH prevents the cancellation event from firing any cancellation auto-actions before the delete lands.
+
+## `allowAutoAction` — the per-booking opt-out
+
+Each booking has an `allowAutoAction` field (`"enable"` / `"disable"`). When `"disable"`, **no auto-actions fire for that booking**, regardless of any rule's status/source/time filters. The auto-action Test tab surfaces this as *"FAIL — booking does not allow auto actions"*.
+
+Common gotchas:
+- API-created test bookings often get `"disable"` set intentionally to avoid real emails — then later get forgotten as the cause of "why doesn't my rule fire?"
+- The Beds24 booking edit UI has a checkbox "Allow Auto Actions" that toggles this; unchecking it silently disables all messaging on that booking.
+- To enable: `POST /bookings` with `[{"id":N,"allowAutoAction":"enable"}]`.
+
+## Auto-action Test tab — the cleanest debugging surface
+
+Auto-actions can't be exercised via API, but the UI has a **Test tab** (`?ajax=autoemailedit&id=<actionId>&tab=8`) with two tools:
+
+1. **"View bookings"** — lists every booking currently inside the rule's time/property scope (does *not* apply the status filter — that's evaluated per-booking).
+2. **Per-booking test** — enter a booking ID, get a deterministic verdict:
+   - ✅ `Not yet triggered` — matches all filters, scheduled to fire
+   - ❌ `FAIL — booking has wrong status` — status filter mismatch
+   - ❌ `FAIL — booking does not allow auto actions` — `allowAutoAction:disable`
+   - ❌ `FAIL — booking does not meet trigger condition` + `End Event Time Window` — the trigger's time window has expired (booking too old for the Booking event, or arrival too far/close)
+   - ❌ Other filter mismatches each get specific messages
+
+The Test tab evaluates against the **currently saved** auto-action config (so save changes before testing) and the **current** booking state, with the message **"Local time now ..."** anchoring the evaluation.
+
 ## Conditional logic (`IF=` family)
 
 Beds24 supports inline conditionals — a family of comparison variables that resolve other variables inside their arguments:
