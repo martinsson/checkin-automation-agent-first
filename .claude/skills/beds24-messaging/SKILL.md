@@ -79,6 +79,34 @@ Beds24 stores 6 status codes. API string → numeric code → bookedit dropdown 
 
 The Test tab labels make this debuggable: a filter mismatch shows as *"FAIL — booking has wrong status"*.
 
+### Autoaction Status filter uses a different numeric scheme than bookedit
+
+The autoaction Trigger tab's **Status** dropdown encodes statuses differently from the bookedit dropdown. Do not mix them.
+
+| Label | Autoaction trigger value | bookedit dropdown value |
+|---|---|---|
+| Cancelled | 0 | 0 |
+| Confirmed | 1 | 1 |
+| New | 2 | 2 |
+| Request | 3 | 3 |
+| Invoice Number Assigned | 4 | — |
+| Invoice Number Not Assigned | 5 | — |
+| Black | 6 | 4 |
+| Confirmed and Invoice Number Not Assigned | 7 | — |
+| Inquiry | 8 | 5 |
+
+Pre-baked combos available in the autoaction Status dropdown: `All` (−3), `All Not Black` (−2), `All Not Cancelled` (−1), and `Confirmed and Invoice Number Not Assigned` (7). **There is no built-in "New + Confirmed" combo.**
+
+### "New OR Confirmed but not Inquiry" cannot be expressed in a single auto-action
+
+The Trigger tab also has a **Booking Field Include / Exclude** mechanism with a field called "Status Code" (numeric id `31` in the `bookingfieldname`/`bookingfieldnamenot` selects). It is tempting to think you could set `Status = All Not Cancelled` + `Status Code Exclude = Inquiry` to express "new + confirmed but not inquiry".
+
+**That doesn't work.** Empirical test on 2026-05-30: "Status Code" in the Booking Field condition maps to the **secondary `statusCode`** (v2 API `statusCode` integer: 0=none, 1=Action required, 2=Allotment, 3=Cancelled by guest, 4=Cancelled by host, 5=No show, 6=Waitlist, 7=Walkin, 8=Non payment), **not** the primary booking status. Setting `bookingfieldnamenot=31, bookingfieldincludenot=0` excluded a booking with `status=new, statusCode=0`; values `1`/`2`/`8` did not exclude `new` bookings.
+
+There is **no** Booking Field condition that targets primary booking status. To fire on both `new` and `confirmed`, clone the auto-action into two siblings (one per status). Beds24 deduplicates per-action-per-booking, so a booking that progresses `new → confirmed` fires each clone at most once. Keep bodies skinny (use `[PROPERTYTEMPLATEn]` per-property templates) to minimize drift between the clones.
+
+The full plan and test transcript: `docs/plans/beds24-status-filter-fix.md`.
+
 ## Modifying bookings via API
 
 - **Updates use POST, not PATCH.** `PATCH /bookings` returns HTTP 500 "Could not process request". Use `POST /bookings` with `[{"id": <bookingId>, ...fields}]`.
@@ -114,6 +142,19 @@ Auto-actions can't be exercised via API, but the UI has a **Test tab** (`?ajax=a
    - ❌ Other filter mismatches each get specific messages
 
 The Test tab evaluates against the **currently saved** auto-action config (so save changes before testing) and the **current** booking state, with the message **"Local time now ..."** anchoring the evaluation.
+
+## Rendered-output preview without sending (booking edit page)
+
+The Test tab gives **trigger verdicts**, not rendered output. For a full rendered preview (placeholders + IFLIKE + per-property templates all resolved), use the booking edit page:
+
+1. Open `?ajax=bookedit&id=<bookingId>&tab=2` (Mail & Actions).
+2. Find the rule's row → click **"Send Now"** (or **"Resend"** if it's already fired). Each is a `<span onclick="popupmail(<bookingId>, <ruleId>)">` that loads `?ajax=sendmail&…` into a fancybox iframe.
+3. The iframe shows: To, Cc, Subject, **fully-resolved Message** (plain + HTML). All variables are substituted, IFLIKE branches resolved, per-property templates inlined. The body is editable here before sending.
+4. To preview only → click **Cancel**. To send → click **Send**.
+
+**Important: "Resend" actually sends** if you click Send in the modal — so on a real guest's booking, the modal previews fine, but don't hit the Send button unless you mean to. For safe verification without risk of accidental dispatch, create a throwaway booking via API with your own email + `allowAutoAction:disable`, preview, then cancel+delete the booking.
+
+To read rendered output programmatically from a same-origin browser-automation context: the iframe's `[name="emailbody"]` textarea holds the HTML; the contenteditable `<div>` holds the plain-text equivalent.
 
 ## Conditional logic (`IF=` family)
 
