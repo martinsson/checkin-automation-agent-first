@@ -39,6 +39,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             or path.startswith("/webhook/")
             or path.startswith("/events/")
             or path.startswith("/requests/")
+            or path.startswith("/cocon/api/")
         ):
             return await call_next(request)
 
