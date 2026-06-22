@@ -117,12 +117,19 @@ img { display: block; max-width: 100%; height: auto; }
 }
 .btn--ghost:hover { background: var(--ink); color: var(--cream); border-color: var(--ink); }
 
-/* ---------- reveal on scroll ---------- */
-.reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.9s ease, transform 0.9s cubic-bezier(.2,.8,.2,1); }
-.reveal.in { opacity: 1; transform: none; }
+/* ---------- reveal on scroll ----------
+   Gated behind .js (set synchronously in <head>) so content is fully
+   visible when JavaScript is unavailable — no blank sections, no FOUC. */
+.js .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.9s ease, transform 0.9s cubic-bezier(.2,.8,.2,1); }
+.js .reveal.in { opacity: 1; transform: none; }
+
+/* Above-the-fold content: animate immediately on load (no scroll wait),
+   so the hero is never blank waiting for the observer. */
+@keyframes riseIn { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+.js .load-rise { opacity: 0; animation: riseIn 0.7s cubic-bezier(.2,.8,.2,1) both; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
-  .reveal { opacity: 1; transform: none; }
+  .reveal, .load-rise { opacity: 1 !important; transform: none !important; }
   html { scroll-behavior: auto; }
 }

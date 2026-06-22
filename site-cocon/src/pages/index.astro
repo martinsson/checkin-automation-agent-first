@@ -15,28 +15,28 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
   <section class="hero">
     <div class="wrap hero__inner">
       <div class="hero__copy">
-        <span class="eyebrow reveal">Grenoble · Saint-Martin-d’Hères</span>
+        <span class="eyebrow load-rise">Grenoble · Saint-Martin-d’Hères</span>
         <h1 class="hero__title">
-          <span class="reveal" style="transition-delay:.05s">Des cocons</span>
-          <span class="reveal hero__accent" style="transition-delay:.14s">où l’on se pose</span>
-          <span class="reveal" style="transition-delay:.23s">vraiment.</span>
+          <span class="load-rise" style="animation-delay:.05s">Des cocons</span>
+          <span class="load-rise hero__accent" style="animation-delay:.12s">où l’on se pose</span>
+          <span class="load-rise" style="animation-delay:.19s">vraiment.</span>
         </h1>
-        <p class="hero__lede reveal" style="transition-delay:.32s">
+        <p class="hero__lede load-rise" style="animation-delay:.26s">
           Quatre appartements pensés dans le détail, au cœur de Grenoble.
           Réservez en direct — mêmes logements que sur Airbnb, sans la commission.
         </p>
-        <div class="hero__actions reveal" style="transition-delay:.4s">
+        <div class="hero__actions load-rise" style="animation-delay:.32s">
           <a href="#appartements" class="btn">Découvrir les logements <span class="arrow">→</span></a>
           <a href="#sejour" class="btn btn--ghost">Le séjour</a>
         </div>
-        <dl class="hero__stats reveal" style="transition-delay:.48s">
+        <dl class="hero__stats load-rise" style="animation-delay:.38s">
           <div><dt>4</dt><dd>appartements</dd></div>
           <div><dt>2–6</dt><dd>voyageurs</dd></div>
           <div><dt>0 %</dt><dd>commission</dd></div>
         </dl>
       </div>
 
-      <figure class="hero__media reveal" style="transition-delay:.2s">
+      <figure class="hero__media load-rise" style="animation-delay:.12s">
         <img src={hero.photos[0]} alt={`Intérieur — ${hero.name}`} loading="eager" fetchpriority="high" />
         <figcaption>{hero.name} · {hero.city}</figcaption>
       </figure>
@@ -113,6 +113,31 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
           </li>
         ))}
       </ul>
+    </div>
+  </section>
+
+  <!-- ============ CONTACT ============ -->
+  <section class="contact" id="contact">
+    <div class="wrap contact__inner reveal">
+      <div class="contact__copy">
+        <span class="eyebrow">Une question ?</span>
+        <h2>Parlons de votre séjour.</h2>
+        <p>
+          Disponibilité particulière, séjour longue durée, groupe ou simple conseil
+          sur le quartier — écrivez-nous ou appelez, on répond avec plaisir.
+        </p>
+      </div>
+      <div class="contact__actions">
+        <a class="contact__card" href="mailto:romain.aurelia.location@gmail.com">
+          <span class="contact__label">Email</span>
+          <span class="contact__value">romain.aurelia.location@gmail.com</span>
+        </a>
+        <a class="contact__card" href="tel:+33684937063">
+          <span class="contact__label">Téléphone</span>
+          <span class="contact__value">+33 6 84 93 70 63</span>
+        </a>
+        <a class="btn contact__cta" href="#appartements">Voir les disponibilités <span class="arrow">→</span></a>
+      </div>
     </div>
   </section>
 
@@ -216,7 +241,28 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
     .stay__points h4 { font-family: var(--font-body); font-size: 1.02rem; font-weight: 700; margin-bottom: 0.5rem; }
     .stay__points p { font-size: 0.92rem; color: var(--ink-soft); }
 
+    /* ---------- contact ---------- */
+    .contact { padding-top: clamp(4rem, 9vw, 8rem); }
+    .contact__inner {
+      display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 5vw, 5rem); align-items: center;
+      background: var(--paper); border: 1px solid var(--line-soft);
+      border-radius: var(--r-lg); padding: clamp(2rem, 5vw, 4rem);
+    }
+    .contact__copy h2 { font-size: clamp(1.9rem, 4vw, 3rem); margin: 1rem 0 1.1rem; }
+    .contact__copy p { color: var(--ink-soft); max-width: 42ch; }
+    .contact__actions { display: flex; flex-direction: column; gap: 1rem; }
+    .contact__card {
+      display: flex; flex-direction: column; gap: 0.25rem;
+      background: var(--cream); border: 1px solid var(--line); border-radius: var(--r-md);
+      padding: 1.1rem 1.3rem; transition: transform 0.3s cubic-bezier(.2,.8,.2,1), box-shadow 0.3s, border-color 0.3s;
+    }
+    .contact__card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgba(94,56,30,0.45); border-color: var(--clay); }
+    .contact__label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-faint); }
+    .contact__value { font-family: var(--font-display); font-size: 1.2rem; color: var(--ink); word-break: break-word; }
+    .contact__cta { align-self: flex-start; margin-top: 0.4rem; }
+
     @media (max-width: 900px) {
+      .contact__inner { grid-template-columns: 1fr; }
       .hero__inner, .apt, .stay__inner { grid-template-columns: 1fr; }
       .hero__media { order: -1; }
       .apt:nth-child(even) .apt__media { order: 0; }
