@@ -1,0 +1,34 @@
+unlockers.ai, www.unlockers.ai {
+    root * /var/www/unlockers
+    try_files {path} {path}.html
+    file_server
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        -Server
+    }
+
+    @www host www.unlockers.ai
+    redir @www https://unlockers.ai{uri} permanent
+}
+
+rental.changit.fr {
+    redir /cocon /cocon/
+    handle_path /cocon/* {
+        root * /var/www/unlockers/cocon
+        file_server
+        encode gzip zstd
+    }
+    handle {
+        reverse_proxy host.docker.internal:8000
+    }
+}
+
+rental2.changit.fr {
+    reverse_proxy host.docker.internal:8001
+}

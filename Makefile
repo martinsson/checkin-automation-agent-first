@@ -1,9 +1,15 @@
-.PHONY: install test run-web run-daemon deploy
+.PHONY: install test run-web run-daemon deploy deploy-site deploy-proxy
 
 # Hetzner server — configure 'hetzner' alias in ~/.ssh/config, or override:
 #   make deploy SERVER=root@1.2.3.4
 SERVER    ?= hetzner
 REMOTE_DIR := /home/app/checkin-automation-agent-first
+
+# Cocon Grenoble static site
+#   SITE_BASE      — Astro base path (/cocon now, / for future own domain)
+#   STATIC_TARGET  — host dir Caddy serves the cocon site from (mounted :ro)
+SITE_BASE     ?= /cocon
+STATIC_TARGET := /home/app/unlockers-static/cocon
 
 install:
 	pip install -r requirements.txt
@@ -43,3 +49,36 @@ deploy:
 	ssh $(SERVER) 'cd $(REMOTE_DIR) && docker compose up -d'
 	@echo "→ Service status"
 	ssh $(SERVER) 'cd $(REMOTE_DIR) && docker compose ps'
+
+# ---------------------------------------------------------------------------
+# Cocon Grenoble static site — build locally, rsync dist/ to the served dir.
+#
+#   make deploy-site                  # SITE_BASE=/cocon (default)
+#   make deploy-site SITE_BASE=/      # future own-domain cutover
+#
+# Astro is built on the BUILD HOST (npm is not assumed on the server); only the
+# built dist/ is rsynced. Caddy serves the files live — no proxy restart needed.
+# ---------------------------------------------------------------------------
+
+deploy-site:
+	@echo "→ Building site-cocon (SITE_BASE=$(SITE_BASE))"
+	cd site-cocon && npm ci
+	cd site-cocon && SITE_BASE=$(SITE_BASE) npm run build
+	@echo "→ Syncing dist/ to $(SERVER):$(STATIC_TARGET)/"
+	rsync -av --delete site-cocon/dist/ $(SERVER):$(STATIC_TARGET)/
+
+# ---------------------------------------------------------------------------
+# Caddy reverse proxy — rsync canonical config from deploy/caddy/, then bring
+# the stack up and reload (zero-downtime). NEVER `down -v`: caddy_data /
+# caddy_config hold the TLS certs.
+# ---------------------------------------------------------------------------
+
+deploy-proxy:
+	@echo "→ Syncing deploy/caddy/ to $(SERVER):/home/app/caddy-proxy/"
+	rsync -av deploy/caddy/ $(SERVER):/home/app/caddy-proxy/
+	@echo "→ Bringing up caddy-proxy"
+	ssh $(SERVER) 'cd /home/app/caddy-proxy && docker compose up -d'
+	@echo "→ Reloading Caddy config"
+	ssh $(SERVER) 'docker exec caddy-proxy-caddy-1 caddy reload --config /etc/caddy/Caddyfile'
+	@echo "→ Proxy status"
+	ssh $(SERVER) 'cd /home/app/caddy-proxy && docker compose ps'
