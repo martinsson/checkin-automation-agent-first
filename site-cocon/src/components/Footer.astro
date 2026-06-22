@@ -1,0 +1,71 @@
+---
+import listings from '../data/listings.json';
+import { url } from '../lib/url';
+const year = 2026;
+---
+<footer class="foot" id="contact">
+  <div class="wrap foot__grid">
+    <div class="foot__brand">
+      <span class="foot__name">Cocon<span>Grenoble</span></span>
+      <p class="foot__tag">Quatre cocons soignés à louer à Grenoble &amp; Saint-Martin-d’Hères. Réservation directe, sans commission d’intermédiaire.</p>
+      <a href="mailto:romain.aurelia.location@gmail.com" class="foot__mail">romain.aurelia.location@gmail.com</a>
+    </div>
+
+    <nav class="foot__col" aria-label="Appartements">
+      <h4>Les appartements</h4>
+      {listings.map((l) => (
+        <a href={url(`/appartements/${l.slug}/`)}>{l.name}</a>
+      ))}
+    </nav>
+
+    <nav class="foot__col" aria-label="Liens">
+      <h4>Réserver</h4>
+      <a href={url('/#appartements')}>Disponibilités &amp; tarifs</a>
+      <a href={url('/#sejour')}>Le séjour</a>
+      <a href={url('/#contact')}>Nous contacter</a>
+    </nav>
+  </div>
+
+  <div class="wrap foot__base">
+    <span>© {year} Cocon Grenoble</span>
+    <span class="foot__made">Réservation sécurisée propulsée par Beds24</span>
+  </div>
+</footer>
+
+<style>
+  .foot {
+    margin-top: clamp(4rem, 10vw, 9rem);
+    padding-top: clamp(3rem, 7vw, 6rem);
+    background: var(--ink);
+    color: var(--cream-deep);
+    border-top-left-radius: var(--r-lg);
+    border-top-right-radius: var(--r-lg);
+  }
+  .foot__grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr;
+    gap: clamp(2rem, 5vw, 5rem);
+    padding-bottom: 3.5rem;
+  }
+  .foot__name { font-family: var(--font-display); font-size: 1.7rem; font-weight: 500; }
+  .foot__name span { color: var(--clay); }
+  .foot__tag { color: #c8bdab; max-width: 38ch; margin: 1rem 0 1.4rem; font-size: 0.96rem; }
+  .foot__mail { color: var(--clay); border-bottom: 1px solid rgba(219,160,120,0.4); padding-bottom: 2px; }
+  .foot__mail:hover { color: var(--cream); }
+  .foot__col h4 {
+    font-family: var(--font-body);
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 1.1rem;
+  }
+  .foot__col a { display: block; padding-block: 0.4rem; color: #d8cdbb; font-size: 0.96rem; transition: color 0.25s, transform 0.25s; }
+  .foot__col a:hover { color: var(--cream); transform: translateX(3px); }
+  .foot__base {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem;
+    padding-block: 1.6rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.82rem; color: var(--ink-faint);
+  }
+  @media (max-width: 720px) {
+    .foot__grid { grid-template-columns: 1fr; gap: 2.5rem; }
+  }
+</style>

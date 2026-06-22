@@ -1,0 +1,229 @@
+---
+import Base from '../layouts/Base.astro';
+import listings from '../data/listings.json';
+import { url } from '../lib/url';
+
+// short excerpt from the first sentences of the description
+const excerpt = (txt, n = 165) => {
+  const flat = txt.replace(/\s+/g, ' ').trim();
+  return flat.length > n ? flat.slice(0, flat.lastIndexOf(' ', n)) + '…' : flat;
+};
+const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
+---
+<Base>
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap hero__inner">
+      <div class="hero__copy">
+        <span class="eyebrow reveal">Grenoble · Saint-Martin-d’Hères</span>
+        <h1 class="hero__title">
+          <span class="reveal" style="transition-delay:.05s">Des cocons</span>
+          <span class="reveal hero__accent" style="transition-delay:.14s">où l’on se pose</span>
+          <span class="reveal" style="transition-delay:.23s">vraiment.</span>
+        </h1>
+        <p class="hero__lede reveal" style="transition-delay:.32s">
+          Quatre appartements pensés dans le détail, au cœur de Grenoble.
+          Réservez en direct — mêmes logements que sur Airbnb, sans la commission.
+        </p>
+        <div class="hero__actions reveal" style="transition-delay:.4s">
+          <a href="#appartements" class="btn">Découvrir les logements <span class="arrow">→</span></a>
+          <a href="#sejour" class="btn btn--ghost">Le séjour</a>
+        </div>
+        <dl class="hero__stats reveal" style="transition-delay:.48s">
+          <div><dt>4</dt><dd>appartements</dd></div>
+          <div><dt>2–6</dt><dd>voyageurs</dd></div>
+          <div><dt>0 %</dt><dd>commission</dd></div>
+        </dl>
+      </div>
+
+      <figure class="hero__media reveal" style="transition-delay:.2s">
+        <img src={hero.photos[0]} alt={`Intérieur — ${hero.name}`} loading="eager" fetchpriority="high" />
+        <figcaption>{hero.name} · {hero.city}</figcaption>
+      </figure>
+    </div>
+    <div class="hero__marquee" aria-hidden="true">
+      <div class="hero__track">
+        {Array.from({ length: 2 }).map(() => (
+          <span>Réservation directe&nbsp; ✶ &nbsp;Logements vérifiés&nbsp; ✶ &nbsp;Accueil autonome&nbsp; ✶ &nbsp;Au cœur de Grenoble&nbsp; ✶ &nbsp;</span>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ APPARTEMENTS ============ -->
+  <section class="apts" id="appartements">
+    <div class="wrap">
+    <div class="apts__head">
+      <span class="eyebrow reveal">Les logements</span>
+      <h2 class="reveal">Choisissez votre cocon.</h2>
+    </div>
+
+    <div class="apts__list">
+      {listings.map((l, i) => (
+        <article class="apt reveal">
+          <a class="apt__media" href={url(`/appartements/${l.slug}/`)} aria-label={`Découvrir ${l.name}`}>
+            <span class="apt__num">{String(i + 1).padStart(2, '0')}</span>
+            <img src={l.photos[0]} alt={`${l.name} — ${l.city}`} loading="lazy" />
+            {l.photos[1] && <img class="apt__media-2" src={l.photos[1]} alt="" loading="lazy" />}
+          </a>
+          <div class="apt__body">
+            <header class="apt__head">
+              <h3>{l.name}</h3>
+              <span class="apt__place">{l.city}</span>
+            </header>
+            <p class="apt__desc">{excerpt(l.description)}</p>
+            <ul class="apt__facts">
+              <li>{l.maxPeople} voyageurs</li>
+              {l.roomSize && <li>{l.roomSize} m²</li>}
+              <li>Arrivée autonome</li>
+            </ul>
+            <div class="apt__actions">
+              <a href={url(`/appartements/${l.slug}/`)} class="apt__link">Voir l’appartement <span class="arrow">→</span></a>
+              <a href={url(`/appartements/${l.slug}/#reserver`)} class="btn">Réserver</a>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+    </div>
+  </section>
+
+  <!-- ============ SÉJOUR / À PROPOS ============ -->
+  <section class="stay" id="sejour">
+    <div class="wrap stay__inner">
+      <div class="stay__copy reveal">
+        <span class="eyebrow">Le séjour</span>
+        <h2>Tout est prêt pour que vous n’ayez qu’à poser vos valises.</h2>
+        <p>
+          Chaque logement est équipé, lumineux et entretenu avec soin. Arrivée en autonomie
+          avec boîte à clés, instructions claires envoyées avant votre venue, et un hôte
+          joignable si besoin. La réservation se fait en quelques clics, paiement sécurisé inclus.
+        </p>
+      </div>
+      <ul class="stay__points">
+        {[
+          ['Réservation directe', 'Même logement que sur Airbnb, sans commission de plateforme.'],
+          ['Arrivée autonome', 'Boîte à clés et code envoyés à l’avance — arrivez à votre rythme.'],
+          ['Cœur de ville', 'À deux pas du tram, des commerces et du centre historique.'],
+          ['Équipé pour durer', 'Cuisine complète, wifi fibre, linge fourni, idéal télétravail.'],
+        ].map(([t, d], i) => (
+          <li class="reveal" style={`transition-delay:${i * 0.08}s`}>
+            <h4>{t}</h4>
+            <p>{d}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <style>
+    /* ---------- hero ---------- */
+    .hero { position: relative; padding-top: clamp(2rem, 6vw, 5rem); overflow: clip; }
+    .hero__inner {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: clamp(2rem, 5vw, 5rem);
+      align-items: center;
+      padding-bottom: clamp(3rem, 7vw, 6rem);
+    }
+    .hero__title {
+      font-size: clamp(3rem, 9vw, 6.6rem);
+      margin: 1.1rem 0 1.4rem;
+      letter-spacing: -0.03em;
+    }
+    .hero__title span { display: block; }
+    .hero__accent { font-style: italic; color: var(--terracotta); font-weight: 400; }
+    .hero__lede { font-size: clamp(1.05rem, 1rem + 0.4vw, 1.28rem); color: var(--ink-soft); max-width: 44ch; }
+    .hero__actions { display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 2rem; }
+    .hero__stats { display: flex; gap: clamp(1.5rem, 4vw, 3rem); margin-top: 2.8rem; padding-top: 2rem; border-top: 1px solid var(--line); }
+    .hero__stats dt { font-family: var(--font-display); font-size: 2.1rem; font-weight: 500; line-height: 1; }
+    .hero__stats dd { font-size: 0.82rem; color: var(--ink-faint); letter-spacing: 0.05em; margin-top: 0.3rem; }
+
+    .hero__media { position: relative; }
+    .hero__media img {
+      width: 100%; aspect-ratio: 4 / 5; object-fit: cover;
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow);
+    }
+    .hero__media figcaption {
+      position: absolute; left: 1.1rem; bottom: 1.1rem;
+      background: color-mix(in srgb, var(--cream) 88%, transparent);
+      backdrop-filter: blur(6px);
+      padding: 0.5rem 0.95rem; border-radius: 100px;
+      font-size: 0.82rem; font-weight: 600; letter-spacing: 0.02em;
+    }
+
+    .hero__marquee { border-block: 1px solid var(--line); overflow: hidden; background: var(--paper); }
+    .hero__track { display: flex; white-space: nowrap; animation: slide 34s linear infinite; }
+    .hero__track span {
+      font-family: var(--font-display); font-style: italic; font-size: 1.15rem;
+      color: var(--ink-soft); padding: 0.9rem 0;
+    }
+    @keyframes slide { to { transform: translateX(-50%); } }
+
+    /* ---------- apartments ---------- */
+    .apts { padding-top: clamp(3.5rem, 8vw, 7rem); }
+    .apts__head { display: flex; flex-direction: column; gap: 0.8rem; margin-bottom: clamp(2rem, 5vw, 4rem); }
+    .apts__head h2 { font-size: clamp(2.2rem, 5vw, 3.8rem); }
+    .apts__list { display: flex; flex-direction: column; gap: clamp(3rem, 7vw, 6rem); }
+
+    .apt {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(1.5rem, 4vw, 4rem);
+      align-items: center;
+    }
+    .apt:nth-child(even) .apt__media { order: 2; }
+    .apt__media {
+      position: relative; display: block; border-radius: var(--r-lg); overflow: hidden;
+      aspect-ratio: 5 / 4; box-shadow: var(--shadow); isolation: isolate;
+    }
+    .apt__media img {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+      transition: opacity 0.7s ease, transform 1.2s cubic-bezier(.2,.8,.2,1);
+    }
+    .apt__media-2 { opacity: 0; }
+    .apt__media:hover img { transform: scale(1.05); }
+    .apt__media:hover .apt__media-2 { opacity: 1; }
+    .apt__num {
+      position: absolute; z-index: 2; top: 1rem; left: 1.1rem;
+      font-family: var(--font-display); font-size: 1rem; font-weight: 600;
+      color: var(--cream); mix-blend-mode: difference;
+    }
+    .apt__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .apt__body h3 { font-size: clamp(1.9rem, 3.5vw, 2.9rem); }
+    .apt__place { font-size: 0.82rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--terracotta); }
+    .apt__desc { color: var(--ink-soft); margin: 1rem 0 1.3rem; max-width: 46ch; }
+    .apt__facts {
+      display: flex; flex-wrap: wrap; gap: 0.6rem; list-style: none; margin-bottom: 1.6rem;
+    }
+    .apt__facts li {
+      font-size: 0.82rem; font-weight: 500;
+      padding: 0.4rem 0.85rem; border: 1px solid var(--line); border-radius: 100px; color: var(--ink-soft);
+    }
+    .apt__actions { display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; }
+    .apt__link { font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--terracotta); padding-bottom: 2px; }
+    .apt__link .arrow { display: inline-block; transition: transform 0.3s; }
+    .apt__link:hover .arrow { transform: translateX(4px); }
+
+    /* ---------- séjour ---------- */
+    .stay { padding-top: clamp(4rem, 9vw, 8rem); }
+    .stay__inner { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 5vw, 5rem); align-items: start; }
+    .stay__copy h2 { font-size: clamp(1.9rem, 4vw, 3rem); margin: 1rem 0 1.2rem; }
+    .stay__copy p { color: var(--ink-soft); max-width: 46ch; }
+    .stay__points { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .stay__points li { padding: 1.6rem; background: var(--paper); border: 1px solid var(--line-soft); border-radius: var(--r-md); }
+    .stay__points h4 { font-family: var(--font-body); font-size: 1.02rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .stay__points p { font-size: 0.92rem; color: var(--ink-soft); }
+
+    @media (max-width: 900px) {
+      .hero__inner, .apt, .stay__inner { grid-template-columns: 1fr; }
+      .hero__media { order: -1; }
+      .apt:nth-child(even) .apt__media { order: 0; }
+      .apt__media { aspect-ratio: 16 / 11; }
+    }
+    @media (max-width: 560px) {
+      .stay__points { grid-template-columns: 1fr; }
+    }
+  </style>
+</Base>

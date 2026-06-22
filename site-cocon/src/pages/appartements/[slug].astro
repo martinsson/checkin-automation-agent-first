@@ -1,0 +1,200 @@
+---
+import Base from '../../layouts/Base.astro';
+import listings from '../../data/listings.json';
+import { url } from '../../lib/url';
+
+export function getStaticPaths() {
+  return listings.map((l) => ({ params: { slug: l.slug }, props: { l } }));
+}
+
+const { l } = Astro.props;
+const paragraphs = l.description.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+const gallery = l.photos.slice(1, 13);
+const mapsUrl = l.lat && l.lng
+  ? `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`
+  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((l.address ?? '') + ' ' + l.city)}`;
+---
+<Base title={`${l.name} — Cocon Grenoble`} description={paragraphs[0]?.slice(0, 155)}>
+  <article class="detail">
+    <!-- breadcrumb + title -->
+    <div class="wrap detail__head">
+      <a href={url('/#appartements')} class="back">← Tous les appartements</a>
+      <div class="detail__titlerow">
+        <div>
+          <span class="eyebrow">{l.city}</span>
+          <h1>{l.name}</h1>
+        </div>
+        <a href="#reserver" class="btn">Voir les disponibilités <span class="arrow">→</span></a>
+      </div>
+      <ul class="detail__facts">
+        <li><strong>{l.maxPeople}</strong> voyageurs</li>
+        {l.roomSize && <li><strong>{l.roomSize}</strong> m²</li>}
+        <li>Arrivée dès <strong>{l.checkIn ?? '15:00'}</strong></li>
+        <li>Départ <strong>{l.checkOut ?? '11:00'}</strong></li>
+      </ul>
+    </div>
+
+    <!-- gallery -->
+    <div class="wrap gallery" id="gallery">
+      <figure class="gallery__hero" data-photo={l.photos[0]}>
+        <img src={l.photos[0]} alt={`${l.name} — vue principale`} loading="eager" />
+      </figure>
+      <div class="gallery__grid">
+        {gallery.map((src, i) => (
+          <figure class="gallery__cell" data-photo={src}>
+            <img src={src} alt={`${l.name} — photo ${i + 2}`} loading="lazy" />
+          </figure>
+        ))}
+      </div>
+    </div>
+
+    <!-- body: description + sticky booking -->
+    <div class="wrap detail__body">
+      <div class="detail__text">
+        <h2>L’appartement</h2>
+        {paragraphs.map((p) => <p>{p}</p>)}
+
+        <div class="detail__links">
+          <a href={mapsUrl} target="_blank" rel="noopener" class="chip">📍 Voir sur la carte</a>
+          <a href={l.airbnbUrl} target="_blank" rel="noopener" class="chip">Voir l’annonce Airbnb ↗</a>
+        </div>
+      </div>
+
+      <aside class="booking" id="reserver">
+        <div class="booking__card">
+          <h2 class="booking__title">Réserver en direct</h2>
+          <p class="booking__note">Choisissez vos dates ci-dessous. Tarifs en temps réel, paiement sécurisé — sans commission de plateforme.</p>
+          <div class="booking__frame">
+            <iframe
+              src={`${l.bookingUrl}&layout=2&lang=fr`}
+              title={`Réservation — ${l.name}`}
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade"
+            ></iframe>
+          </div>
+          <a href={`${l.bookingUrl}&lang=fr`} target="_blank" rel="noopener" class="booking__pop">Ouvrir en plein écran ↗</a>
+        </div>
+      </aside>
+    </div>
+  </article>
+
+  <!-- lightbox -->
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <button class="lightbox__close" aria-label="Fermer">✕</button>
+    <button class="lightbox__nav lightbox__prev" aria-label="Précédent">‹</button>
+    <img id="lightbox-img" src="" alt="" />
+    <button class="lightbox__nav lightbox__next" aria-label="Suivant">›</button>
+  </div>
+
+  <script>
+    const srcs = [...document.querySelectorAll('[data-photo]')].map((el) => el.getAttribute('data-photo'));
+    const box = document.getElementById('lightbox');
+    const boxImg = document.getElementById('lightbox-img');
+    let idx = 0;
+    const open = (i) => { idx = i; boxImg.src = srcs[idx]; box.classList.add('open'); box.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden'; };
+    const close = () => { box.classList.remove('open'); box.setAttribute('aria-hidden', 'true'); document.body.style.overflow = ''; };
+    const step = (d) => { idx = (idx + d + srcs.length) % srcs.length; boxImg.src = srcs[idx]; };
+
+    document.querySelectorAll('[data-photo]').forEach((el, i) => el.addEventListener('click', () => open(i)));
+    box.querySelector('.lightbox__close').addEventListener('click', close);
+    box.querySelector('.lightbox__prev').addEventListener('click', (e) => { e.stopPropagation(); step(-1); });
+    box.querySelector('.lightbox__next').addEventListener('click', (e) => { e.stopPropagation(); step(1); });
+    box.addEventListener('click', (e) => { if (e.target === box) close(); });
+    document.addEventListener('keydown', (e) => {
+      if (!box.classList.contains('open')) return;
+      if (e.key === 'Escape') close();
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
+    });
+  </script>
+
+  <style>
+    .detail { padding-top: clamp(1.5rem, 4vw, 3rem); }
+    .back { font-size: 0.9rem; font-weight: 600; color: var(--ink-soft); }
+    .back:hover { color: var(--terracotta); }
+    .detail__titlerow {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; flex-wrap: wrap;
+      margin: 1.3rem 0 1.5rem;
+    }
+    .detail__titlerow h1 { font-size: clamp(2.6rem, 7vw, 5rem); margin-top: 0.4rem; }
+    .detail__facts {
+      display: flex; flex-wrap: wrap; gap: 0.6rem 2rem; list-style: none;
+      padding-bottom: 2rem; border-bottom: 1px solid var(--line);
+    }
+    .detail__facts li { font-size: 0.95rem; color: var(--ink-soft); }
+    .detail__facts strong { font-family: var(--font-display); font-weight: 600; color: var(--ink); font-size: 1.1rem; }
+
+    /* gallery */
+    .gallery { margin-top: clamp(1.5rem, 4vw, 2.5rem); display: grid; gap: 0.8rem; }
+    .gallery__hero img {
+      width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-lg); cursor: zoom-in;
+    }
+    .gallery__grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem;
+    }
+    .gallery__cell img {
+      width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--r-md); cursor: zoom-in;
+      transition: filter 0.3s, transform 0.5s cubic-bezier(.2,.8,.2,1);
+    }
+    .gallery__cell:hover img { filter: brightness(1.04); transform: scale(1.02); }
+
+    /* body */
+    .detail__body {
+      display: grid; grid-template-columns: 1.4fr 1fr; gap: clamp(2rem, 5vw, 4.5rem);
+      margin-top: clamp(2.5rem, 6vw, 5rem); align-items: start;
+    }
+    .detail__text h2 { font-size: clamp(1.8rem, 3.5vw, 2.6rem); margin-bottom: 1.3rem; }
+    .detail__text p { color: var(--ink-soft); margin-bottom: 1.1rem; max-width: 60ch; }
+    .detail__links { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 2rem; }
+    .chip {
+      font-size: 0.9rem; font-weight: 600; padding: 0.6rem 1.1rem;
+      border: 1px solid var(--line); border-radius: 100px; transition: background 0.25s, color 0.25s, border-color 0.25s;
+    }
+    .chip:hover { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+
+    /* booking */
+    .booking { position: sticky; top: 88px; }
+    .booking__card {
+      background: var(--paper); border: 1px solid var(--line-soft);
+      border-radius: var(--r-lg); padding: clamp(1.2rem, 3vw, 1.8rem);
+      box-shadow: var(--shadow);
+    }
+    .booking__title { font-size: 1.5rem; }
+    .booking__note { font-size: 0.9rem; color: var(--ink-soft); margin: 0.6rem 0 1.2rem; }
+    .booking__frame {
+      background: var(--cream); border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line-soft);
+    }
+    .booking__frame iframe { width: 100%; min-height: 620px; border: 0; display: block; }
+    .booking__pop { display: inline-block; margin-top: 0.9rem; font-size: 0.85rem; font-weight: 600; color: var(--terracotta); }
+    .booking__pop:hover { color: var(--terracotta-d); }
+
+    @media (max-width: 900px) {
+      .gallery__grid { grid-template-columns: repeat(3, 1fr); }
+      .detail__body { grid-template-columns: 1fr; }
+      .booking { position: static; }
+    }
+    @media (max-width: 520px) {
+      .gallery__grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* lightbox */
+    .lightbox {
+      position: fixed; inset: 0; z-index: 1000; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(26, 22, 18, 0.94); backdrop-filter: blur(4px);
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 90vw; max-height: 86vh; border-radius: var(--r-md); box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+    .lightbox__close { position: absolute; top: 1.2rem; right: 1.4rem; }
+    .lightbox__close, .lightbox__nav {
+      background: rgba(255,255,255,0.1); color: var(--cream); border: 1px solid rgba(255,255,255,0.2);
+      width: 48px; height: 48px; border-radius: 50%; font-size: 1.4rem; cursor: pointer;
+      display: grid; place-items: center; transition: background 0.25s;
+    }
+    .lightbox__close:hover, .lightbox__nav:hover { background: rgba(255,255,255,0.22); }
+    .lightbox__nav { position: absolute; top: 50%; transform: translateY(-50%); }
+    .lightbox__prev { left: 1.2rem; }
+    .lightbox__next { right: 1.2rem; }
+    @media (max-width: 560px) { .lightbox__nav { display: none; } }
+  </style>
+</Base>
