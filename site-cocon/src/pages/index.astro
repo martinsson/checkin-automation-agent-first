@@ -126,9 +126,7 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
           Disponibilité particulière, séjour longue durée, groupe ou simple conseil
           sur le quartier — écrivez-nous, on répond avec plaisir.
         </p>
-        <p class="contact__alt">
-          Ou directement : <a href="mailto:martinsson.rouveyrol@gmail.com">martinsson.rouveyrol@gmail.com</a>
-        </p>
+        <p class="contact__alt">Réponse en général sous 24&nbsp;h.</p>
       </div>
 
       <form class="contact__form" action={`${import.meta.env.BASE_URL}api/contact`} method="POST" data-contact-form>
@@ -176,7 +174,7 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
               throw new Error(data.message || 'error');
             }
           } catch (err) {
-            status.innerHTML = 'Oups, l’envoi a échoué. Écrivez-nous directement à <a href="mailto:martinsson.rouveyrol@gmail.com">martinsson.rouveyrol@gmail.com</a>.';
+            status.textContent = 'Oups, l’envoi a échoué. Merci de réessayer dans un instant.';
             status.className = 'contact__status is-err';
           } finally {
             btn.disabled = false;
