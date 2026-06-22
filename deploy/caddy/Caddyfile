@@ -18,19 +18,22 @@ unlockers.ai, www.unlockers.ai {
 }
 
 rental.changit.fr {
-    redir /cocon /cocon/
-    # Cocon Grenoble contact-form API → this repo's app (:8001). Must come
-    # before the static handler so /cocon/api/* isn't served as files.
-    handle /cocon/api/* {
-        reverse_proxy host.docker.internal:8001
-    }
-    handle_path /cocon/* {
-        root * /var/www/unlockers/cocon
-        file_server
-        encode gzip zstd
-    }
-    handle {
-        reverse_proxy host.docker.internal:8000
+    # route{} forces evaluation in written order (Caddy would otherwise run
+    # handle_path before handle, swallowing /cocon/api/* as a static file).
+    route {
+        redir /cocon /cocon/
+        # Cocon Grenoble contact-form API → this repo's app (:8001).
+        handle /cocon/api/* {
+            reverse_proxy host.docker.internal:8001
+        }
+        handle_path /cocon/* {
+            root * /var/www/unlockers/cocon
+            file_server
+            encode gzip zstd
+        }
+        handle {
+            reverse_proxy host.docker.internal:8000
+        }
     }
 }
 
