@@ -9,10 +9,11 @@ from src.ports.door_lock import DoorCodeRequest, DoorLockGateway
 
 def _request(**overrides) -> DoorCodeRequest:
     defaults = dict(
-        reservation_id=42,
-        guest_name="Alice",
+        person_name="Alice",
         starts_at="2026-07-15T13:00:00+02:00",
         ends_at="2026-07-18T15:00:00+02:00",
+        purpose="early_checkin",
+        reservation_id=42,
         code_name="Alice — resa 42",
     )
     defaults.update(overrides)

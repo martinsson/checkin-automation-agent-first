@@ -21,9 +21,9 @@ class SimulatorDoorLockGateway(DoorLockGateway):
         if self.fail_with is not None:
             raise DoorLockError(self.fail_with)
         self.created.append(request)
-        pin = f"{1000 + len(self.created):04d}{request.reservation_id % 10000:04d}"
+        pin = f"{1000 + len(self.created):04d}{(request.reservation_id or 0) % 10000:04d}"
         return DoorCode(
             code=pin,
             code_id=f"sim-{len(self.created)}",
-            name=request.code_name or f"Guest {request.guest_name}",
+            name=request.code_name or request.person_name,
         )

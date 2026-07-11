@@ -55,10 +55,11 @@ def fake_make():
 
 def _request(**overrides) -> DoorCodeRequest:
     defaults = dict(
-        reservation_id=42,
-        guest_name="Alice",
+        person_name="Alice",
         starts_at="2026-07-15T13:00:00+02:00",
         ends_at="2026-07-18T15:00:00+02:00",
+        purpose="early_checkin",
+        reservation_id=42,
         code_name="Alice — resa 42",
     )
     defaults.update(overrides)
@@ -115,6 +116,8 @@ async def test_make_gateway_sends_expected_payload_and_api_key(fake_make):
     received = fake_make.received[0]
     assert received["headers"].get("x-make-apikey") == "secret-key"
     assert received["payload"]["action"] == "create_door_code"
+    assert received["payload"]["purpose"] == "early_checkin"
+    assert received["payload"]["person_name"] == "Alice"
     assert received["payload"]["reservation_id"] == 42
     assert received["payload"]["starts_at"] == "2026-07-15T13:00:00+02:00"
     assert received["payload"]["ends_at"] == "2026-07-18T15:00:00+02:00"

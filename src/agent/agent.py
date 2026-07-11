@@ -210,10 +210,11 @@ class AgentRunner:
             return
 
         request = DoorCodeRequest(
-            reservation_id=reservation_id,
-            guest_name=guest_name,
+            person_name=guest_name,
             starts_at=starts_at,
             ends_at=ends_at,
+            purpose="early_checkin",
+            reservation_id=reservation_id,
             code_name=code_name or f"{guest_name} — resa {reservation_id}".strip(" —"),
         )
         try:

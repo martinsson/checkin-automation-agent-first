@@ -24,6 +24,7 @@ from src.web.auth import router as auth_router
 from src.web.routes import router as review_router
 from src.web.hostbuddy_webhook import router as webhook_router
 from src.web.contact import router as contact_router
+from src.web.door_codes import router as door_codes_router
 
 log = logging.getLogger(__name__)
 
@@ -72,12 +73,14 @@ def create_app() -> FastAPI:
     application.state.review_token = review_token
     application.state.memory = memory
     application.state.agent = agent
+    application.state.door_lock = door_lock
 
     application.add_middleware(AuthMiddleware, review_token=review_token)
     application.include_router(auth_router)
     application.include_router(review_router)
     application.include_router(webhook_router)
     application.include_router(contact_router)
+    application.include_router(door_codes_router)
 
     log.info("Web UI started. DB: %s", db_path)
     return application

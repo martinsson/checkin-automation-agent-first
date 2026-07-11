@@ -12,13 +12,22 @@ L'application envoie un `POST` (JSON) au webhook Make :
 ```json
 {
   "action": "create_door_code",
+  "purpose": "early_checkin",
   "reservation_id": 42,
-  "guest_name": "Alice",
+  "person_name": "Alice",
+  "property": "",
   "starts_at": "2026-07-15T13:00:00+02:00",
   "ends_at": "2026-07-18T15:00:00+02:00",
   "code_name": "Alice — resa 42"
 }
 ```
+
+- `purpose` : `early_checkin` (déclenché par l'agent) ou `manual` (formulaire
+  `/door-codes` de l'interface web — artisans, etc.). Permet de router
+  différemment dans Make si besoin.
+- `reservation_id` : `null` pour les codes manuels.
+- `property` : libellé libre du logement (vide = serrure par défaut) — utile
+  seulement si le scénario Make route vers plusieurs serrures.
 
 Le scénario Make doit répondre **HTTP 200** avec un corps JSON contenant au
 minimum le champ `code` :
@@ -99,9 +108,14 @@ curl -sS -X POST "$MAKE_IGLOOHOME_WEBHOOK_URL" \
 La réponse doit contenir `{"code": "...", ...}`. Penser à supprimer le code
 de test dans l'app Igloohome.
 
-## Côté agent
+## Côté application
 
-Le tool `create_door_code` n'est déclenché que lorsqu'un événement
+Deux points d'entrée créent des codes :
+
+- **Formulaire web `/door-codes`** (derrière le login owner) — création
+  manuelle pour un artisan ou une arrivée anticipée. Valeurs par défaut :
+  aujourd'hui 14:00 → demain 12:00. Le PIN est affiché à l'écran.
+- **Agent** : le tool `create_door_code` n'est déclenché que lorsqu'un événement
 `door_code_request` apparaît dans le journal d'événements d'une réservation
 (voir `src/prompts/agent_system.txt`). Le code créé est journalisé dans un
 événement `door_code_created` ; un échec produit `door_code_failed`.

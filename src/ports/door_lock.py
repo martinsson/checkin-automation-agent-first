@@ -9,11 +9,13 @@ from dataclasses import dataclass
 
 @dataclass
 class DoorCodeRequest:
-    """A request to create a temporary access code for a stay."""
-    reservation_id: int
-    guest_name: str
+    """A request to create a temporary access code (guest stay or ad-hoc access)."""
+    person_name: str        # who the code is for (guest, handyman, ...)
     starts_at: str          # ISO 8601 datetime — code becomes valid
     ends_at: str            # ISO 8601 datetime — code expires
+    purpose: str = ""       # e.g. "early_checkin", "maintenance"
+    reservation_id: int | None = None   # absent for ad-hoc codes (handymen)
+    property_name: str = "" # which property/lock, if the Make scenario routes on it
     code_name: str = ""     # label shown in the lock app (e.g. "Alice — resa 42")
 
 

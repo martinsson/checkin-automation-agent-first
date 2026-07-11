@@ -31,8 +31,10 @@ class MakeDoorLockGateway(DoorLockGateway):
     async def create_code(self, request: DoorCodeRequest) -> DoorCode:
         payload = {
             "action": "create_door_code",
+            "purpose": request.purpose,
             "reservation_id": request.reservation_id,
-            "guest_name": request.guest_name,
+            "person_name": request.person_name,
+            "property": request.property_name,
             "starts_at": request.starts_at,
             "ends_at": request.ends_at,
             "code_name": request.code_name,
