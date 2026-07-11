@@ -95,3 +95,6 @@ secrets/
 credentials/
 *.key
 *.pem
+
+# site-cocon is a Node/Astro project; its src/lib/ is source, not a Python lib dir
+!site-cocon/src/lib/
