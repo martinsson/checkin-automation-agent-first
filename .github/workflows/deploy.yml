@@ -1,0 +1,59 @@
+name: Deploy
+
+# Equivalent of `make deploy`: rsync source to the Hetzner server, build the
+# Docker images there, and restart services via docker compose.
+#
+# Required repository secrets:
+#   DEPLOY_SSH_KEY     — private key authorized on the server (e.g. for user 'app')
+#   DEPLOY_HOST        — server hostname or IP (the 'hetzner' ~/.ssh/config alias
+#                        doesn't exist on runners, so host/user are passed explicitly)
+#   DEPLOY_USER        — SSH user on the server (e.g. 'app' or 'root')
+# Optional:
+#   DEPLOY_KNOWN_HOSTS — output of `ssh-keyscan <host>`; pins the server's host key.
+#                        If unset, the workflow falls back to scanning at run time.
+#
+# The .env file is never deployed by this workflow (same as `make deploy` —
+# it lives only on the server; see the Makefile header for first-time setup).
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $DEPLOY_HOST
+            User ${{ secrets.DEPLOY_USER }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+          EOF
+
+      - name: Deploy
+        run: make deploy SERVER=deploy-target
