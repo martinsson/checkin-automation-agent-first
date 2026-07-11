@@ -20,7 +20,7 @@ server.
 
 Run from the repo root:
 
-- `make deploy-site` — build the Astro site (`site-cocon/`) locally with
+- `make deploy-cocon-site` — build the Astro site (`site-cocon/`) locally with
   `SITE_BASE` (default `/cocon`) and rsync `dist/` to
   `hetzner:/home/app/unlockers-static/cocon/`. No Caddy restart needed; Caddy
   serves static files live.
@@ -28,8 +28,8 @@ Run from the repo root:
   `hetzner:/home/app/caddy-proxy/`, then `docker compose up -d`, reload Caddy
   (zero-downtime), and print `ps`.
 
-Override the server with `make deploy-site SERVER=root@1.2.3.4`, or the base
-path with `make deploy-site SITE_BASE=/`.
+Override the server with `make deploy-cocon-site SERVER=root@1.2.3.4`, or the base
+path with `make deploy-cocon-site SITE_BASE=/`.
 
 ## One-time bootstrap (manual)
 
@@ -40,7 +40,7 @@ These are NOT automated — do them once before the first deploy:
    ```
    ssh hetzner 'mkdir -p /home/app/caddy-proxy /home/app/unlockers-static/cocon'
    ```
-3. Run `make deploy-proxy` once, then `make deploy-site`.
+3. Run `make deploy-proxy` once, then `make deploy-cocon-site`.
 
 ## Reconcile caveats (read before first `deploy-proxy`)
 

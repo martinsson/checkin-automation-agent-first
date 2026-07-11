@@ -1,4 +1,4 @@
-.PHONY: install test run-web run-daemon deploy deploy-site deploy-proxy
+.PHONY: install test run-web run-daemon deploy deploy-cocon-site deploy-proxy
 
 # Hetzner server — configure 'hetzner' alias in ~/.ssh/config, or override:
 #   make deploy SERVER=root@1.2.3.4
@@ -53,14 +53,14 @@ deploy:
 # ---------------------------------------------------------------------------
 # Cocon Grenoble static site — build locally, rsync dist/ to the served dir.
 #
-#   make deploy-site                  # SITE_BASE=/cocon (default)
-#   make deploy-site SITE_BASE=/      # future own-domain cutover
+#   make deploy-cocon-site                  # SITE_BASE=/cocon (default)
+#   make deploy-cocon-site SITE_BASE=/      # future own-domain cutover
 #
 # Astro is built on the BUILD HOST (npm is not assumed on the server); only the
 # built dist/ is rsynced. Caddy serves the files live — no proxy restart needed.
 # ---------------------------------------------------------------------------
 
-deploy-site:
+deploy-cocon-site:
 	@echo "→ Building site-cocon (SITE_BASE=$(SITE_BASE))"
 	cd site-cocon && npm ci
 	cd site-cocon && SITE_BASE=$(SITE_BASE) npm run build

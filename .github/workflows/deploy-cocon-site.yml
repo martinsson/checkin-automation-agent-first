@@ -1,0 +1,65 @@
+name: Deploy Cocon Site
+
+# Equivalent of `make deploy-cocon-site`: build the Astro static site
+# (site-cocon/) on the runner, then rsync the built dist/ to the directory
+# Caddy serves it from. This is the standalone Cocon Grenoble booking site —
+# NOT the FastAPI app (that's the separate "Deploy" workflow).
+#
+# Uses the same deploy secrets as the app workflow:
+#   DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS (optional)
+#
+# Caddy serves the files live, so there is no service restart here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      site_base:
+        description: "Astro base path (SITE_BASE)"
+        required: false
+        default: "/cocon"
+
+concurrency:
+  group: deploy-cocon-site
+  cancel-in-progress: false
+
+jobs:
+  deploy-cocon-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: site-cocon/package-lock.json
+
+      - name: Set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $DEPLOY_HOST
+            User ${{ secrets.DEPLOY_USER }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+          EOF
+
+      - name: Deploy Cocon site
+        run: make deploy-cocon-site SERVER=deploy-target SITE_BASE="${{ github.event.inputs.site_base }}"
