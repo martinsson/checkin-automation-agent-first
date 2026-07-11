@@ -56,7 +56,17 @@ def create_app() -> FastAPI:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         dry_run=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
     )
-    agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier)
+    door_lock = None
+    make_webhook_url = os.environ.get("MAKE_IGLOOHOME_WEBHOOK_URL", "").strip()
+    if make_webhook_url:
+        from src.adapters.make_door_lock import MakeDoorLockGateway
+
+        door_lock = MakeDoorLockGateway(
+            webhook_url=make_webhook_url,
+            api_key=os.environ.get("MAKE_IGLOOHOME_API_KEY", "").strip(),
+        )
+
+    agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)
 
     application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
     application.state.review_token = review_token

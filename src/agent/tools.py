@@ -55,6 +55,44 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "create_door_code",
+        "description": (
+            "Create a temporary Igloohome door access code for the guest's stay, "
+            "via the Make integration. Use ONLY when the event log explicitly asks "
+            "for a door code (a door_code_request event with no matching "
+            "door_code_created event). Take the validity window from the event "
+            "payload — never invent dates."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "starts_at": {
+                    "type": "string",
+                    "description": (
+                        "ISO 8601 datetime when the code becomes valid (the check-in "
+                        "datetime). Round DOWN to the full hour — Igloohome codes "
+                        "start on the hour."
+                    ),
+                },
+                "ends_at": {
+                    "type": "string",
+                    "description": (
+                        "ISO 8601 datetime when the code expires (the check-out "
+                        "datetime). Round UP to the full hour."
+                    ),
+                },
+                "code_name": {
+                    "type": "string",
+                    "description": (
+                        "Optional label for the code shown in the Igloohome app, "
+                        "e.g. \"Alice — resa 42\"."
+                    ),
+                },
+            },
+            "required": ["starts_at", "ends_at"],
+        },
+    },
+    {
         "name": "wait",
         "description": (
             "Take no action right now. Use this when you have already sent the cleaner "

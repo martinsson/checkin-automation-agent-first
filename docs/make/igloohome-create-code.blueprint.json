@@ -1,0 +1,145 @@
+{
+    "name": "Igloohome — Create access code (checkin-automation)",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": null,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "label": "checkin-automation — create door code"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "action",
+                        "type": "text"
+                    },
+                    {
+                        "name": "reservation_id",
+                        "type": "number"
+                    },
+                    {
+                        "name": "guest_name",
+                        "type": "text"
+                    },
+                    {
+                        "name": "starts_at",
+                        "type": "text"
+                    },
+                    {
+                        "name": "ends_at",
+                        "type": "text"
+                    },
+                    {
+                        "name": "code_name",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "igloohome:createPin",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": null
+            },
+            "mapper": {
+                "deviceId": "",
+                "variance": "1",
+                "pinType": "4",
+                "startDate": "{{1.starts_at}}",
+                "endDate": "{{1.ends_at}}",
+                "accessName": "{{if(1.code_name; 1.code_name; 1.guest_name + \" — resa \" + 1.reservation_id)}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "label": "My Igloohome connection"
+                        }
+                    },
+                    "expect": {
+                        "pinType": {
+                            "label": "Duration"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:igloohome",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "module": "gateway:WebhookRespond",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "status": "200",
+                "body": "{\"code\": \"{{2.pin}}\", \"code_id\": \"{{2.pinId}}\", \"name\": \"{{2.accessName}}\"}",
+                "headers": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "eu2.make.com"
+    }
+}
