@@ -73,3 +73,8 @@ Terracotta/La Palma €35, Le Fernand €65) and **Guilherme Veloso** (Le Matiss
 See [docs/door-codes.md](./docs/door-codes.md) →
 [docs/igloohome-make-scenario.md](./docs/igloohome-make-scenario.md). PIN
 generation runs in a Make.com scenario (id 5738113), not in this repo.
+
+**Access text for tradespeople** (plumber/electrician): follow
+[docs/handyman-access-text.md](./docs/handyman-access-text.md) — fetch arrival +
+code messages from Smoobu or Beds24 via `scripts/access_text_fetch.py`, strip
+guest-specific lines, merge, leave the PIN as `[CODE PIN]`.
