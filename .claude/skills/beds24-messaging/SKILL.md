@@ -1,6 +1,6 @@
 ---
 name: beds24-messaging
-description: Beds24 v2 messaging architecture — API auth flow, template variable syntax, per-property template fields, and what's API-manageable vs UI-only. Use when configuring auto-action rules, writing per-property check-in/check-out blocks, migrating templates from another PMS, or sending guest messages via API.
+description: Beds24 v2 messaging architecture — API auth flow, template variable syntax, per-property template fields, what's API-manageable vs UI-only, and editing auto-actions in the control-panel browser UI. Also covers reconciling the guest-message flow with the Smoobu side (L'Hippocrate) — Smoobu template editing, placeholders, and the Beds24↔Smoobu message mapping. Use when configuring auto-action rules, writing per-property check-in/check-out blocks, migrating or reconciling templates across PMSs (Beds24/Smoobu), or sending guest messages via API.
 ---
 
 # Beds24 v2 Messaging
@@ -216,6 +216,21 @@ Auto-action rules can't be exercised directly via API. Verified path that works:
 
 The Beds24 messages API endpoint `GET /bookings/messages` only returns **channel chat threads** (Airbnb/Booking.com), not standard email sends. Don't expect Direct booking emails to show up there.
 
+## Reading the sent guest-message flow at scale (the reliable pull)
+
+Auto-action *rules* aren't API-readable, but for channel (Airbnb/Booking.com) bookings the **rendered, sent messages are** — including the auto-action output, which posts into the channel thread with `source: "host"`. This is the practical way to reconstruct "what does a guest actually receive across the stay" without touching the UI. Two gotchas:
+
+- **Do NOT use `GET /bookings?includeMessages=true`** — it returns `messages: []` even when threads exist. Empirically unreliable (verified 2026-07: 32 Matisse bookings all showed 0, yet 472 messages existed).
+- **Use the dedicated `GET /bookings/messages` endpoint, paginated.** It filters by `propertyId` (or `bookingId`) and pages 100 at a time:
+
+```bash
+# All message threads for a property, paginated (page until pages.nextPageExists is false):
+curl -s -H "token: $BEDS24_READ_ALL_TOKEN" \
+  'https://api.beds24.com/v2/bookings/messages?propertyId=326234&maxResults=100&page=1'
+```
+
+Each message: `{bookingId, time, message, source: "host"|"guest", read}`. To isolate the **automated templates** from one-off manual chat: pull all messages, group by `bookingId`, and find the host messages whose wording recurs near-verbatim across many bookings (a template used all season shows up in N bookings; manual replies appear once). Signature-substring counting works well (e.g. count bookings containing `"Merci pour votre réservation au"` → confirmation template). `read:bookings` scope (the `BEDS24_READ_ALL_TOKEN`) is enough.
+
 ## HTML formatting rules
 
 Beds24 stores TWO bodies per language (`emailtextFR` plain + `emailbodyFR` HTML, same for EN). If you only fill the plain version:
@@ -231,6 +246,62 @@ Example:
 emailtextFR = Bonjour [GUESTFIRSTNAME],\n\n[PROPERTYTEMPLATE1]\n\n...
 emailbodyFR = <p>Bonjour [GUESTFIRSTNAME],</p><p>[PROPERTYTEMPLATE1BR]</p><p>...</p>
 ```
+
+### Keep all four variants of a message in sync
+
+Every auto-action carries **four** editable bodies: **FR plain, FR HTML, EN plain, EN HTML** (a subject per language too). The house rule here: **all four must say the same thing** — same wording, same variables, same placeholder slots — differing only in language and in plain-vs-HTML markup. Which one actually goes out depends on the send channel and guest language, so a stale variant ships silently:
+
+- `Send Message = Booking API/Email Smart` posts into the **Airbnb/Booking chat thread**, and channels consume the **plain-text** body — so a correct plain body with a rotten HTML body still looks fine on Airbnb but ships garbage by email.
+- Observed failure (action 568892, 2026-07): FR plain read `Bonjour [GUESTFIRSTNAME] … à 11h00`, while FR HTML had drifted to junk — `Bonjour [INVITÉPREMNOM] … à 23h00`, `Remets la clé`, `[NOM DE LA PROPRIÉTÉ]`, with `_msttexthash`/`_msthash` attributes on every node. **Root cause: the page had been saved while the browser's Microsoft page-translation (Edge/Chrome "Translate") was active** — it rewrote the on-screen HTML *and* the placeholder names (`[GUESTFIRSTNAME]`→`[INVITÉPREMNOM]`), and Summernote persisted the translated DOM into `emailbodyFR`. **Never edit/save a Beds24 message page with browser page-translation on**, and when cleaning up an already-polluted body, overwrite the HTML wholesale (don't trust a re-translate).
+- **Language-specific per-property slots:** the FR body uses `[PROPERTYTEMPLATE3]`, the EN body uses `[PROPERTYTEMPLATE4]` (the flats keep FR text in slot 3, EN in slot 4). Don't reuse the same slot number across languages unless the slot itself is language-neutral.
+- When the same message exists as **two actions** (e.g. one `Guests Emails` for email guests + one `Booking API` for channel guests), keep those in sync with each other too — editing one and forgetting its twin is how drift starts.
+
+## Editing auto-actions in the control panel (browser)
+
+Auto-action rules are UI-only. Current location (2026): **Guest Management → Auto Actions** at `https://beds24.com/control3.php?pagetype=communicationautoemails` (the old `control2.php?pagetype=…` URL redirects to the calendar). Each rule opens at `control2.php?ajax=autoemailedit&id=<id>&tab=1` (Messaging tab). The list is **account-wide** — the "Property" column shows the account name, so an edit to a shared rule hits every property.
+
+Form (server-rendered, jQuery + Summernote):
+- Subject: `emailsubEN` / `emailsubFR` (text inputs).
+- Plain body: `emailtextEN` / `emailtextFR` (textareas).
+- HTML body: hidden `emailbodyEN` / `emailbodyFR` textareas, driven by a Summernote editor bound to `#emailbody{LANG}_editor`; **only the active-language editor is instantiated**.
+
+Reliable scripted edit: set the plain textareas' `.value` directly; for the **active** HTML editor use `jQuery('#emailbody{LANG}_editor').summernote('code', html)` (also set the hidden textarea); for the **inactive** language set the hidden `emailbody{LANG}` `.value` + the `_editor` div `innerHTML`.
+
+Gotchas:
+- The **Save button is often off-screen to the right** in this layout — `scrollIntoView()` / click the element, don't blind-click a fixed coordinate.
+- **Save is AJAX — don't navigate the tab until it finishes** or the save aborts and silently reverts. Wait, then reload and re-read the fields to confirm persistence.
+- Rendered preview (variables resolved, no send): booking edit page `?ajax=bookedit&id=<bookingId>&tab=1` → Mail & Actions → **Send Now** (click Cancel to preview only).
+
+### The departure message is TWO auto-actions (channel + email)
+
+Matisse's departure exists as a pair, both account-wide, that must stay identical:
+- **568892 "Checkout reminder"** — `Send Message = Booking API/Email Smart` → posts into the **Airbnb/Booking chat thread** (this is what channel guests actually read). Channels use the **plain-text** body.
+- **582716 "Departure - per-property extras"** — `Send Message = Guests Emails` → **email** to guests who have a real address (Airbnb guests don't, so no duplication). Uses `[PROPERTYTEMPLATE3/4]` for the per-property cot-fold line.
+
+Editing one and forgetting its twin is the classic drift. (This is why 568892 kept shipping the stale "clé dans la boîte à clés" long after 582716 was fixed.)
+
+## Reconciling with Smoobu (L'Hippocrate)
+
+Le Matisse's guest messaging runs on **Beds24**; **L'Hippocrate** runs on **Smoobu** (apartment id `3230512`; Matisse is *also* in that Smoobu account as `3052591`). Both are the same six-message arc:
+
+| Stage | Beds24 (Matisse) auto-action | Smoobu (Hippocrate) template |
+|---|---|---|
+| Booking confirmation | Confirmation de réservation (568630) | Booking Confirmation *(All)* |
+| Access / arrival info | Arrival - access info (582702) | Arrival instructions - L'Hippocrate |
+| Door / lock code | Send igloohome PIN (586256, via Make 5738113) | lock — uses `[igloohomeLockCode]` |
+| First-night check-in | Mid-stay check-in (568891) | How can we make your stay better? *(All)* |
+| Departure | Checkout reminder (568892, channel) + Departure extras (582716, email) | Departure info / Check-out *(All)* |
+| Thank-you / review | Post-checkout thank you (568893) | Thanks for your stay! *(All)* |
+
+Editing Smoobu templates:
+- **Web UI only.** The Smoobu API can't edit templates (it exposes reservations + threads — sent copies appear in `GET /reservations/{id}/messages`, `type:2` = host, `type:1` = guest). The site needs an **interactive login** (reCAPTCHA) — the user must log in; the API key doesn't authenticate the site.
+- Location: **Experience → Communication** (`/en/custom-mail`; edit at `/en/custom-mail/edit/{id}`).
+- **Placeholders use [square brackets].** Key ones: `[firstGuestName]` (guest first name — NOT `[firstName]`, which is the *owner*), `[guestName]` (full name), `[igloohomeLockCode]` (door PIN; Hippocrate keypad = enter code then press the igloohome logo), `[guestAppLink]` (guest guide), `[departureTime]`, `[arrivalDate]`. Full list is in the editor's right sidebar.
+- Fields: `CustomMailTranslations[0][mailSubject|mailBody]` = first language. **Add a language** via the "Add language" button → creates `CustomMailTranslations[1][BookingLanguage]` (native `<select>`) + subject/body. The first block has no language field (it's the default).
+- **Save quirk:** plain server POST — a scripted `.click()` / `el.value=` submit **silently fails to persist**. Trigger a **real mouse click** on Save (it redirects to `/custom-mail` on success). Always verify by reloading the edit page and re-reading the textareas.
+- **Scope trap:** templates scoped **"All" accommodations** (Booking Confirmation, stay-better, Departure, Thanks) *also* fire for **Le Matisse in Smoobu** — editing them touches Matisse too. Only Arrival-instructions + lock are per-property. (Open question worth checking: whether Matisse should be excluded from Smoobu's "All" templates to avoid duplicating its Beds24 messages.)
+
+When reconciling, **read the live templates first** — most Hippocrate templates were already bilingual FR+EN and aligned; don't overwrite good content from a stale plan. Sent-message samples (from `/reservations/{id}/messages`) only capture whichever language went out, so they under-report existing translations.
 
 ## Useful API calls
 
