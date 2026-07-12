@@ -12,6 +12,12 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/")
+async def index():
+    """Root — send the owner to the default page (door codes)."""
+    return RedirectResponse(url="/door-codes", status_code=303)
+
+
 @router.get("/review", response_class=HTMLResponse)
 async def review_list(request: Request):
     """List all pending drafts for owner review."""
@@ -76,7 +82,7 @@ async def review_list(request: Request):
 <body>
   <h2>Pending Drafts</h2>
   {body}
-  <p><a href="/logout">Logout</a></p>
+  <p><a href="/door-codes">Create door code</a> — <a href="/logout">Logout</a></p>
 </body>
 </html>
 """)
