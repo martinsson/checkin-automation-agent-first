@@ -11,27 +11,65 @@
             },
             "mapper": {},
             "metadata": {
-                "designer": { "x": -30, "y": 172 },
-                "advanced": true,
+                "designer": {
+                    "x": -30,
+                    "y": 172
+                },
                 "restore": {
                     "parameters": {
-                        "hook": { "label": "igloohome-test-clone webhook" }
+                        "hook": {
+                            "label": "igloohome-test-clone webhook"
+                        }
                     }
                 },
                 "parameters": [
-                    { "name": "hook", "type": "hook:gateway-webhook", "label": "Webhook", "required": true },
-                    { "name": "maxResults", "type": "number", "label": "Maximum number of results" }
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
                 ],
                 "interface": [
-                    { "name": "deviceId", "type": "text" },
-                    { "name": "code_name", "type": "text" },
-                    { "name": "starts_at", "type": "text" },
-                    { "name": "ends_at", "type": "text" },
-                    { "name": "person_name", "type": "text" },
-                    { "name": "purpose", "type": "text" },
-                    { "name": "reservation_id", "type": "text" },
-                    { "name": "property", "type": "text" }
-                ]
+                    {
+                        "name": "deviceId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "code_name",
+                        "type": "text"
+                    },
+                    {
+                        "name": "starts_at",
+                        "type": "text"
+                    },
+                    {
+                        "name": "ends_at",
+                        "type": "text"
+                    },
+                    {
+                        "name": "person_name",
+                        "type": "text"
+                    },
+                    {
+                        "name": "purpose",
+                        "type": "text"
+                    },
+                    {
+                        "name": "reservation_id",
+                        "type": "text"
+                    },
+                    {
+                        "name": "property",
+                        "type": "text"
+                    }
+                ],
+                "advanced": true
             }
         },
         {
@@ -53,10 +91,21 @@
                 ]
             },
             "metadata": {
-                "designer": { "x": 120, "y": 100 },
+                "designer": {
+                    "x": 120,
+                    "y": 100
+                },
                 "interface": [
-                    { "name": "igloo_start", "label": "igloo_start", "type": "any" },
-                    { "name": "igloo_end", "label": "igloo_end", "type": "any" }
+                    {
+                        "name": "igloo_start",
+                        "type": "any",
+                        "label": "igloo_start"
+                    },
+                    {
+                        "name": "igloo_end",
+                        "type": "any",
+                        "label": "igloo_end"
+                    }
                 ]
             }
         },
@@ -68,21 +117,67 @@
                 "__IMTCONN__": 7418636
             },
             "mapper": {
+                "endDate": "{{200.igloo_end}}",
                 "deviceId": "{{2.deviceId}}",
                 "variance": "2",
                 "startDate": "{{200.igloo_start}}",
-                "endDate": "{{200.igloo_end}}",
                 "accessName": "{{2.code_name}}"
             },
             "metadata": {
-                "designer": { "x": 270, "y": 22 },
+                "designer": {
+                    "x": 270,
+                    "y": 22
+                },
                 "restore": {
                     "parameters": {
-                        "__IMTCONN__": { "label": "My IglooConnect OAuth2 connection" }
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "app#igloo-integration-custom-app-cwjy7b"
+                            },
+                            "label": "My IglooConnect OAuth2 connection"
+                        }
                     }
                 },
                 "parameters": [
-                    { "name": "__IMTCONN__", "type": "account:app#igloo-integration-custom-app-cwjy7b", "label": "Connection", "required": true }
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:app#igloo-integration-custom-app-cwjy7b",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ],
+                "expect": [
+                    {
+                        "name": "deviceId",
+                        "type": "text",
+                        "label": "Device ID",
+                        "required": true
+                    },
+                    {
+                        "name": "variance",
+                        "type": "integer",
+                        "label": "Variance for AlgoPIN (1-3)",
+                        "required": true
+                    },
+                    {
+                        "name": "startDate",
+                        "type": "text",
+                        "label": "Start Date (e.g. 2024-01-01T00:00:00+08:00)",
+                        "required": true
+                    },
+                    {
+                        "name": "endDate",
+                        "type": "text",
+                        "label": "End Date (e.g. 2024-01-01T00:00:00+08:00)",
+                        "required": true
+                    },
+                    {
+                        "name": "accessName",
+                        "type": "text",
+                        "label": "Access Name",
+                        "required": true
+                    }
                 ]
             }
         },
@@ -92,14 +187,20 @@
             "version": 1,
             "parameters": {},
             "mapper": {
-                "status": "200",
                 "body": "{\"code\": \"{{4.pin}}\", \"name\": \"{{2.code_name}}\"}",
+                "status": "200",
                 "headers": [
-                    { "key": "Content-Type", "value": "application/json" }
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
                 ]
             },
             "metadata": {
-                "designer": { "x": 520, "y": 22 }
+                "designer": {
+                    "x": 520,
+                    "y": 22
+                }
             }
         }
     ],
@@ -112,12 +213,15 @@
             "autoCommit": true,
             "autoCommitTriggerLast": true,
             "sequential": false,
+            "slots": null,
             "confidential": false,
             "dataloss": false,
             "dlq": true,
             "freshVariables": false
         },
-        "designer": { "orphans": [] },
+        "designer": {
+            "orphans": []
+        },
         "zone": "eu1.make.com",
         "notes": []
     }

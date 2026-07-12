@@ -66,10 +66,20 @@ déjà présent dans le compte ; le blueprint les réutilise tels quels.
 
 ### Importer / mettre à jour le scénario
 
-Sur un scénario ouvert : **⋯ (menu haut-droite) → Import blueprint**, choisir
-`igloohome-create-code.blueprint.json`. L'import réutilise le webhook et la
-connexion existants (aucun ré-appairage à faire). Vérifier ensuite le module
-Igloo (connexion sélectionnée) puis **enregistrer** et activer le scénario.
+**On gère ce scénario par blueprint commité** (le repo fait foi). Ne pas éditer
+les modules à la main dans Make.
+
+1. **Avant toute modif : exporter d'abord** l'état actuel (**⋯ → Copy blueprint
+   to clipboard**, puis `pbpaste > /tmp/live.json`) et le differ contre
+   `igloohome-create-code.blueprint.json` — pour repérer d'éventuels changements
+   faits à la main dans l'UI, et les réconcilier avant d'importer.
+2. Éditer le fichier `.blueprint.json` commité, puis sur le scénario ouvert :
+   **⋯ → Import blueprint**, choisir `igloohome-create-code.blueprint.json`.
+   L'import réutilise le webhook et la connexion existants (aucun ré-appairage).
+3. Vérifier le module Igloo (connexion sélectionnée), **enregistrer** (l'icône
+   disquette ne doit plus avoir de pastille orange), et régler la planification
+   sur **Immediately as data arrives** (sinon le webhook renvoie `Accepted` au
+   lieu du JSON). Activer le scénario.
 
 ## Configuration de l'application
 

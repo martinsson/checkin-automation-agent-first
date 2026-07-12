@@ -2,6 +2,12 @@
 
 Project working notes for agents. Keep durable, easy-to-forget facts here.
 
+## Deployed apps (Hetzner, one box)
+
+Two separate app deployments: **this repo** → `:8001` → `rental2.changit.fr`
+(container `checkin-automation-agent-first-web-1`). A different/older `checkin-automation`
+app → `:8000` → `rental.changit.fr`.
+
 ## Beds24 API access
 
 Tokens live in **`.env`** (values there, never commit/print them). Auth model: a
@@ -78,3 +84,31 @@ generation runs in a Make.com scenario (id 5738113), not in this repo.
 [docs/handyman-access-text.md](./docs/handyman-access-text.md) — fetch arrival +
 code messages from Smoobu or Beds24 via `scripts/access_text_fetch.py`, strip
 guest-specific lines, merge, leave the PIN as `[CODE PIN]`.
+
+## Make.com scenarios — manage via committed blueprints
+
+Make scenarios are managed as **committed blueprints** so the repo stays the
+source of truth. Blueprints live in `docs/make/*.blueprint.json`.
+
+- **Always apply changes by importing a blueprint**, never by hand-editing
+  modules in the Make UI. Edit the committed `*.blueprint.json`, then in Make:
+  scenario **⋯ → Import blueprint** (imports into the open scenario, reusing its
+  existing webhook + connections).
+- **Before updating an existing scenario, export it first** (**⋯ → Copy blueprint
+  to clipboard**, then `pbpaste`) and diff against the committed file — this
+  catches edits someone made by hand in the UI. Reconcile *before* importing so
+  you never silently overwrite that drift.
+- Exports are safe to commit: connections/webhooks are referenced by numeric id
+  (no tokens or URLs), and the clipboard export strips the `zone` JWT. Still grep
+  a fresh export for `token|hook.eu|secret|api_key` before committing.
+- Scheduling ("Immediately as data arrives" vs an interval) is a scenario-level
+  setting, not always in the blueprint — re-check it after an import. A
+  webhook→response scenario **must** be *Immediately* or the webhook returns a
+  bare `Accepted` (and callers that expect JSON fail to parse it).
+
+Known blueprints:
+- `docs/make/igloohome-create-code.blueprint.json` — door-code (Igloohome
+  AlgoPIN) webhook API used by `/door-codes` and the agent's `create_door_code`
+  tool (scenario 6528429, eu1). Contract + setup in `docs/make/README.md`.
+- The guest self-check-in PIN scenario (id 5738113) is **not** yet captured as a
+  committed blueprint.
