@@ -24,11 +24,19 @@ class DeviceMap:
 
     def __init__(self, default: str = "", properties: dict[str, str] | None = None):
         self._default = default or ""
+        props = properties or {}
+        # preserve original display names (file order + casing) for UI listing
+        self._names = [str(k).strip() for k in props if str(k).strip()]
         # normalise keys to casefolded for case-insensitive matching
         self._by_name = {
             str(k).strip().casefold(): str(v or "")
-            for k, v in (properties or {}).items()
+            for k, v in props.items()
         }
+
+    @property
+    def property_names(self) -> list[str]:
+        """Property display names in file order (for form dropdowns, etc.)."""
+        return list(self._names)
 
     def device_for(self, property_name: str) -> str:
         """Return the device id for a property, or the default if unknown/empty."""

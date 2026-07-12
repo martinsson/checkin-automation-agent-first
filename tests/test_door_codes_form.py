@@ -42,6 +42,34 @@ def test_form_page_shows_default_window():
     assert "T12:00" in resp.text  # default end tomorrow 12:00
 
 
+def test_form_shows_property_dropdown_with_apartment_names():
+    client, _ = _make_client()
+    resp = client.get("/door-codes")
+    assert resp.status_code == 200
+    assert '<select name="property_name"' in resp.text
+    # apartment names from the device map appear as options
+    assert "Le Fernand" in resp.text
+    assert "Terracotta" in resp.text
+    # the free-text property input is gone
+    assert '<input name="property_name"' not in resp.text
+
+
+def test_submit_without_person_name_succeeds():
+    client, door_lock = _make_client()
+    resp = client.post("/door-codes", data={
+        "person_name": "",
+        "property_name": "Le Fernand",
+        "starts_at": "2026-07-11T14:00",
+        "ends_at": "2026-07-12T12:00",
+    })
+    assert resp.status_code == 200
+    assert len(door_lock.created) == 1
+    created = door_lock.created[0]
+    assert created.person_name == ""
+    # the lock-app label falls back to the property when no name is given
+    assert created.code_name == "Le Fernand"
+
+
 def test_form_requires_login():
     client, _ = _make_client()
     client.cookies.clear()

@@ -40,6 +40,16 @@ def _form_page(
         if error
         else ""
     )
+
+    selected = property_name.strip().casefold()
+    options = ['<option value="">— Default lock —</option>']
+    for name in load_device_map().property_names:
+        sel = " selected" if name.casefold() == selected else ""
+        options.append(
+            f'<option value="{html.escape(name)}"{sel}>{html.escape(name)}</option>'
+        )
+    property_options = "\n".join(options)
+
     return f"""
 <!DOCTYPE html>
 <html>
@@ -50,15 +60,16 @@ def _form_page(
   {error_html}
   <form method="post" action="/door-codes" style="max-width:420px">
     <p>
-      <label>For whom<br>
+      <label>For whom (optional)<br>
         <input name="person_name" value="{html.escape(person_name)}"
-               placeholder="e.g. Plombier Dupont" required style="width:100%" autofocus />
+               placeholder="e.g. Plombier Dupont — just a label" style="width:100%" autofocus />
       </label>
     </p>
     <p>
-      <label>Property (optional)<br>
-        <input name="property_name" value="{html.escape(property_name)}"
-               placeholder="leave empty for the default lock" style="width:100%" />
+      <label>Property<br>
+        <select name="property_name" style="width:100%">
+          {property_options}
+        </select>
       </label>
     </p>
     <p>
@@ -127,9 +138,6 @@ async def create_door_code(request: Request):
             "Door lock gateway is not configured (set MAKE_IGLOOHOME_WEBHOOK_URL)."
         )
 
-    if not person_name:
-        return form_with_error("Please say who the code is for.")
-
     try:
         starts_at, ends_at = _round_to_hours(starts_at_raw, ends_at_raw)
     except ValueError:
@@ -138,6 +146,9 @@ async def create_door_code(request: Request):
     if ends_at <= starts_at:
         return form_with_error("The end must be after the start.")
 
+    # "For whom" is just a label; fall back to the property (or a generic tag)
+    # so the lock app still shows something meaningful when it's left blank.
+    code_name = person_name or property_name or "Code manuel"
     code_request = DoorCodeRequest(
         person_name=person_name,
         starts_at=starts_at,
@@ -145,7 +156,7 @@ async def create_door_code(request: Request):
         purpose="manual",
         property_name=property_name,
         device_id=load_device_map().device_for(property_name),
-        code_name=person_name,
+        code_name=code_name,
     )
     try:
         door_code = await door_lock.create_code(code_request)
@@ -168,7 +179,7 @@ async def create_door_code(request: Request):
     <strong>{html.escape(door_code.code)}</strong>
   </p>
   <p>
-    For: <strong>{html.escape(person_name)}</strong><br>
+    {f"For: <strong>{html.escape(person_name)}</strong><br>" if person_name else ""}
     {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
     Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
   </p>
