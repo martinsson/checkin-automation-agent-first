@@ -20,6 +20,4 @@ properties:
   "Le Matisse": "EK1X15cbb024"      # Beds24 id 326234
   "La Palma": "IGK343002588"        # Beds24 id 326275
   "Le Fernand": "EK1X152a8431"      # Beds24 id 328510 (Campus / Parking)
-  # Not in Beds24 — id provided manually. NOTE: verify — reads "OE1X14cc9418"
-  # but the other EK1X devices start "EK1X", so this may be "EK1X14cc9418".
-  "Hippocrate": "OE1X14cc9418"
+  "Hippocrate": "EK1X17000098"      # not in Beds24 — id provided manually
