@@ -110,5 +110,12 @@ Known blueprints:
 - `docs/make/igloohome-create-code.blueprint.json` — door-code (Igloohome
   AlgoPIN) webhook API used by `/door-codes` and the agent's `create_door_code`
   tool (scenario 6528429, eu1). Contract + setup in `docs/make/README.md`.
-- The guest self-check-in PIN scenario (id 5738113) is **not** yet captured as a
-  committed blueprint.
+- `docs/make/integration-webhooks.blueprint.json` — "Integration Webhooks", the
+  production Igloohome→Beds24 PIN scenario (id 5738113, eu1): webhook → set vars
+  → Igloo AlgoPIN → Beds24 auth → POST booking. **The Beds24 refresh token in
+  module 100's `refreshToken` header is redacted to `REDACTED_BEDS24_REFRESH_TOKEN`**
+  — paste the real value (`.env` `BEDS24_REFRESH_TOKEN`) back in Make after any
+  re-import; never commit it.
+
+⚠️ This scenario type hard-codes a **Beds24 refresh token** in an HTTP header, so
+always run the secret scan (above) on a fresh export and redact before committing.
