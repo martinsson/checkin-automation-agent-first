@@ -11,9 +11,15 @@ name: Deploy
 # Optional:
 #   DEPLOY_KNOWN_HOSTS — output of `ssh-keyscan <host>`; pins the server's host key.
 #                        If unset, the workflow falls back to scanning at run time.
+#   MAKE_IGLOOHOME_WEBHOOK_URL — Make custom-webhook URL that mints Igloohome PINs.
+#                        When set, it's upserted into the server .env at deploy time
+#                        so the /door-codes form and agent tool can create codes.
+#   MAKE_IGLOOHOME_API_KEY     — optional key if that webhook requires one.
 #
-# The .env file is never deployed by this workflow (same as `make deploy` —
+# The .env file itself is never rsynced by this workflow (same as `make deploy` —
 # it lives only on the server; see the Makefile header for first-time setup).
+# The "Sync app secrets" step below is the one exception: it edits individual
+# keys in the server .env in place, only for secrets that are actually set.
 
 on:
   workflow_dispatch:
@@ -54,6 +60,43 @@ jobs:
             IdentityFile ~/.ssh/id_deploy
             IdentitiesOnly yes
           EOF
+
+      - name: Sync app secrets into server .env
+        # Upsert selected app secrets into the server-side .env (which `make
+        # deploy` never rsyncs). Each key is written only when its secret is
+        # set, so this is a no-op until you add the secret in repo Settings →
+        # Secrets. Runs before Deploy so the rebuilt container reads the new
+        # value on `docker compose up -d`. Values travel over ssh stdin (never
+        # the command line or the log); only key names are printed.
+        env:
+          MAKE_IGLOOHOME_WEBHOOK_URL: ${{ secrets.MAKE_IGLOOHOME_WEBHOOK_URL }}
+          MAKE_IGLOOHOME_API_KEY: ${{ secrets.MAKE_IGLOOHOME_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Must match REMOTE_DIR in the Makefile.
+          REMOTE_DIR=/home/app/checkin-automation-agent-first
+
+          upsert() {
+            key="$1"; val="$2"
+            if [ -z "$val" ]; then
+              echo "· $key not set — leaving server .env untouched"
+              return 0
+            fi
+            printf '%s' "$val" | ssh deploy-target "
+              set -eu
+              cd '$REMOTE_DIR'
+              touch .env && chmod 600 .env
+              val=\$(cat)
+              tmp=\$(mktemp)
+              grep -v '^$key=' .env > \"\$tmp\" || true
+              printf '%s=%s\n' '$key' \"\$val\" >> \"\$tmp\"
+              mv \"\$tmp\" .env
+            "
+            echo "✓ $key synced into server .env"
+          }
+
+          upsert MAKE_IGLOOHOME_WEBHOOK_URL "${MAKE_IGLOOHOME_WEBHOOK_URL:-}"
+          upsert MAKE_IGLOOHOME_API_KEY "${MAKE_IGLOOHOME_API_KEY:-}"
 
       - name: Deploy
         run: make deploy SERVER=deploy-target
