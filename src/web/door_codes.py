@@ -6,6 +6,7 @@ Door code form — owner creates an ad-hoc Igloohome access code
 import html
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -17,13 +18,43 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Igloohome codes are interpreted in the flats' local time; keep everything in
+# Europe/Paris so the naive datetimes we send match what Make expects.
+_TZ = ZoneInfo("Europe/Paris")
+
+
+def _paris_now() -> datetime:
+    return datetime.now(_TZ)
+
+
+def _current_hour() -> datetime:
+    """Now, floored to the full hour (naive, Europe/Paris)."""
+    return _paris_now().replace(minute=0, second=0, microsecond=0, tzinfo=None)
+
 
 def _default_window() -> tuple[str, str]:
-    """Default validity: today 14:00 → tomorrow 12:00 (datetime-local format)."""
-    today = datetime.now().replace(hour=14, minute=0, second=0, microsecond=0)
-    tomorrow = (today + timedelta(days=1)).replace(hour=12)
+    """Default validity: today 14:00 → tomorrow 12:00, but never a past start.
+
+    In the evening, "today 14:00" is already past — Igloohome rejects a window
+    that starts in the past — so the start is clamped up to the current hour.
+    """
+    now = _paris_now().replace(tzinfo=None)
+    start = now.replace(hour=14, minute=0, second=0, microsecond=0)
+    if start <= now:
+        start = _current_hour()
+    end = (now + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M"
-    return today.strftime(fmt), tomorrow.strftime(fmt)
+    return start.strftime(fmt), end.strftime(fmt)
+
+
+def _clamp_start(starts_at: str, now_hour: datetime | None = None) -> str:
+    """Clamp a naive 'YYYY-MM-DDTHH:MM:SS' start up to the current hour if past.
+
+    igloohome rejects a code whose window is already in the past; clamping the
+    start to the current hour keeps an evening/late request valid ("from now").
+    """
+    floor = (now_hour or _current_hour()).strftime("%Y-%m-%dT%H:00:00")
+    return floor if starts_at < floor else starts_at
 
 
 def _form_page(
@@ -145,6 +176,13 @@ async def create_door_code(request: Request):
 
     if ends_at <= starts_at:
         return form_with_error("The end must be after the start.")
+
+    # A start in the past makes Igloohome reject the whole window; clamp it to
+    # the current hour so an evening/late request is still valid ("from now").
+    starts_at = _clamp_start(starts_at)
+
+    if ends_at <= starts_at:
+        return form_with_error("That window is already over — pick an end time in the future.")
 
     # "For whom" is just a label; fall back to the property (or a generic tag)
     # so the lock app still shows something meaningful when it's left blank.
