@@ -35,6 +35,9 @@ class MakeDoorLockGateway(DoorLockGateway):
             "reservation_id": request.reservation_id,
             "person_name": request.person_name,
             "property": request.property_name,
+            # The Make scenario's Igloo module reads deviceId straight from the
+            # payload (device selected app-side from the property→device map).
+            "deviceId": request.device_id,
             "starts_at": request.starts_at,
             "ends_at": request.ends_at,
             "code_name": request.code_name,

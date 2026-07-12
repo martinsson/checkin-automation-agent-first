@@ -16,6 +16,7 @@ class DoorCodeRequest:
     purpose: str = ""       # e.g. "early_checkin", "maintenance"
     reservation_id: int | None = None   # absent for ad-hoc codes (handymen)
     property_name: str = "" # which property/lock, if the Make scenario routes on it
+    device_id: str = ""     # Igloohome device the code opens (from the property→device map)
     code_name: str = ""     # label shown in the lock app (e.g. "Alice — resa 42")
 
 

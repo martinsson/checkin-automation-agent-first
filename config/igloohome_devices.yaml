@@ -1,0 +1,23 @@
+# Property → Igloohome device map for door-code creation.
+#
+# The device id is the Igloohome lock a generated PIN opens. In Beds24 it lives
+# in each property's **template variable n°8** (same value the Igloohome→Beds24
+# Make scenario reads as `deviceId`). Copy those values here.
+#
+# Used by: the /door-codes web form and the agent's create_door_code tool, to
+# put `deviceId` in the Make webhook payload (see docs/make/README.md).
+#
+# Keys are matched case-insensitively against the "property" field of a request.
+# `default` is used when no property is given or none matches.
+#
+# TODO: fill in the device ids (Beds24 property template variable 8).
+
+default: ""            # fallback lock (leave empty to require an explicit match)
+
+properties:
+  "Velours T2": ""
+  "Studio Écrin": ""
+  "Terracotta": ""
+  "Le Matisse": ""
+  "La Palma": ""
+  "Le Fernand": ""
