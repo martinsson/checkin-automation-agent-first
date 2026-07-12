@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from src.config.device_map import load_device_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
 
 log = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ async def create_door_code(request: Request):
         ends_at=ends_at,
         purpose="manual",
         property_name=property_name,
+        device_id=load_device_map().device_for(property_name),
         code_name=person_name,
     )
     try:

@@ -123,3 +123,35 @@ def test_round_to_hours_keeps_exact_hours():
     starts, ends = _round_to_hours("2026-07-11T14:00", "2026-07-12T12:00")
     assert starts == "2026-07-11T14:00:00"
     assert ends == "2026-07-12T12:00:00"
+
+
+def test_submit_resolves_device_id_from_property():
+    client, door_lock = _make_client()
+    resp = client.post("/door-codes", data={
+        "person_name": "Plombier",
+        "property_name": "Le Fernand",
+        "starts_at": "2026-07-11T14:00",
+        "ends_at": "2026-07-12T12:00",
+    })
+    assert resp.status_code == 200
+    assert door_lock.created[0].device_id == "EK1X152a8431"
+
+
+def test_submit_unknown_property_uses_default_device():
+    client, door_lock = _make_client()
+    resp = client.post("/door-codes", data={
+        "person_name": "Plombier",
+        "property_name": "Nonexistent Place",
+        "starts_at": "2026-07-11T14:00",
+        "ends_at": "2026-07-12T12:00",
+    })
+    assert resp.status_code == 200
+    assert door_lock.created[0].device_id == ""  # default is empty in the shipped map
+
+
+def test_device_map_case_insensitive_and_default():
+    from src.config.device_map import DeviceMap
+    m = DeviceMap(default="DFLT", properties={"Le Matisse": "EK1X15cbb024"})
+    assert m.device_for("le matisse") == "EK1X15cbb024"
+    assert m.device_for("unknown") == "DFLT"
+    assert m.device_for("") == "DFLT"
