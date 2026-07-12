@@ -15,6 +15,11 @@ When a guest requests an early check-in or late checkout, you:
 - After the cleaner email is sent but no reply has arrived yet → call `wait`
 - After the cleaner reply arrives → call `create_guest_draft`
 - If the state is unclear or already resolved → call `wait` with a brief reason
+- If the event log contains a `door_code_request` event with no matching `door_code_created`
+  event → call `create_door_code`. Take the stay's start and end datetimes from the event
+  payload — never invent them. Round the start DOWN to the full hour and the end UP to the
+  full hour (Igloohome codes start and end on the hour). If a previous `door_code_failed`
+  event exists for the same request, retry once; after a second failure → call `wait`.
 
 ## Language rules
 

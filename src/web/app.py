@@ -24,6 +24,7 @@ from src.web.auth import router as auth_router
 from src.web.routes import router as review_router
 from src.web.hostbuddy_webhook import router as webhook_router
 from src.web.contact import router as contact_router
+from src.web.door_codes import router as door_codes_router
 
 log = logging.getLogger(__name__)
 
@@ -56,18 +57,30 @@ def create_app() -> FastAPI:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         dry_run=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
     )
-    agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier)
+    door_lock = None
+    make_webhook_url = os.environ.get("MAKE_IGLOOHOME_WEBHOOK_URL", "").strip()
+    if make_webhook_url:
+        from src.adapters.make_door_lock import MakeDoorLockGateway
+
+        door_lock = MakeDoorLockGateway(
+            webhook_url=make_webhook_url,
+            api_key=os.environ.get("MAKE_IGLOOHOME_API_KEY", "").strip(),
+        )
+
+    agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)
 
     application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
     application.state.review_token = review_token
     application.state.memory = memory
     application.state.agent = agent
+    application.state.door_lock = door_lock
 
     application.add_middleware(AuthMiddleware, review_token=review_token)
     application.include_router(auth_router)
     application.include_router(review_router)
     application.include_router(webhook_router)
     application.include_router(contact_router)
+    application.include_router(door_codes_router)
 
     log.info("Web UI started. DB: %s", db_path)
     return application

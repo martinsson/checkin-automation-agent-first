@@ -1,0 +1,124 @@
+{
+    "name": "Door code (Igloohome AlgoPIN) — checkin-automation",
+    "flow": [
+        {
+            "id": 2,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 3378292,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": { "x": -30, "y": 172 },
+                "advanced": true,
+                "restore": {
+                    "parameters": {
+                        "hook": { "label": "igloohome-test-clone webhook" }
+                    }
+                },
+                "parameters": [
+                    { "name": "hook", "type": "hook:gateway-webhook", "label": "Webhook", "required": true },
+                    { "name": "maxResults", "type": "number", "label": "Maximum number of results" }
+                ],
+                "interface": [
+                    { "name": "deviceId", "type": "text" },
+                    { "name": "code_name", "type": "text" },
+                    { "name": "starts_at", "type": "text" },
+                    { "name": "ends_at", "type": "text" },
+                    { "name": "person_name", "type": "text" },
+                    { "name": "purpose", "type": "text" },
+                    { "name": "reservation_id", "type": "text" },
+                    { "name": "property", "type": "text" }
+                ]
+            }
+        },
+        {
+            "id": 200,
+            "module": "util:SetVariables",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "scope": "roundtrip",
+                "variables": [
+                    {
+                        "name": "igloo_start",
+                        "value": "{{formatDate(parseDate(2.starts_at; \"YYYY-MM-DD[T]HH:mm:ss\"; \"Europe/Paris\"); \"YYYY-MM-DD[T]HH:mm:ssZ\"; \"Europe/Paris\")}}"
+                    },
+                    {
+                        "name": "igloo_end",
+                        "value": "{{formatDate(parseDate(2.ends_at; \"YYYY-MM-DD[T]HH:mm:ss\"; \"Europe/Paris\"); \"YYYY-MM-DD[T]HH:mm:ssZ\"; \"Europe/Paris\")}}"
+                    }
+                ]
+            },
+            "metadata": {
+                "designer": { "x": 120, "y": 100 },
+                "interface": [
+                    { "name": "igloo_start", "label": "igloo_start", "type": "any" },
+                    { "name": "igloo_end", "label": "igloo_end", "type": "any" }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "app#igloo-integration-custom-app-cwjy7b:generateDurationHourlyAlgoPIN",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 7418636
+            },
+            "mapper": {
+                "deviceId": "{{2.deviceId}}",
+                "variance": "2",
+                "startDate": "{{200.igloo_start}}",
+                "endDate": "{{200.igloo_end}}",
+                "accessName": "{{2.code_name}}"
+            },
+            "metadata": {
+                "designer": { "x": 270, "y": 22 },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": { "label": "My IglooConnect OAuth2 connection" }
+                    }
+                },
+                "parameters": [
+                    { "name": "__IMTCONN__", "type": "account:app#igloo-integration-custom-app-cwjy7b", "label": "Connection", "required": true }
+                ]
+            }
+        },
+        {
+            "id": 6,
+            "module": "gateway:WebhookRespond",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "status": "200",
+                "body": "{\"code\": \"{{4.pin}}\", \"name\": \"{{2.code_name}}\"}",
+                "headers": [
+                    { "key": "Content-Type", "value": "application/json" }
+                ]
+            },
+            "metadata": {
+                "designer": { "x": 520, "y": 22 }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": true,
+            "freshVariables": false
+        },
+        "designer": { "orphans": [] },
+        "zone": "eu1.make.com",
+        "notes": []
+    }
+}

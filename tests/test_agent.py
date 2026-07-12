@@ -5,6 +5,7 @@ Agent unit tests — stub the Anthropic client so no real API calls are made.
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from src.adapters.simulator_door_lock import SimulatorDoorLockGateway
 from src.adapters.sqlite_memory import SqliteRequestMemory
 from src.agent.agent import AgentRunner
 from src.ports.cleaner import CleanerNotifier, CleanerQuery, CleanerResponse
@@ -45,8 +46,15 @@ def notifier():
 
 
 @pytest.fixture
-def agent(memory, notifier):
-    runner = AgentRunner(memory=memory, cleaner_notifier=notifier, anthropic_api_key="test")
+def door_lock():
+    return SimulatorDoorLockGateway()
+
+
+@pytest.fixture
+def agent(memory, notifier, door_lock):
+    runner = AgentRunner(
+        memory=memory, cleaner_notifier=notifier, anthropic_api_key="test", door_lock=door_lock
+    )
     return runner
 
 
@@ -144,6 +152,84 @@ async def test_wait_appends_wait_event(agent, memory, notifier):
     wait_events = [e for e in events if e.event_type == "wait"]
     assert len(wait_events) == 1
     assert wait_events[0].payload["reason"] == "still waiting for cleaner"
+
+
+@pytest.mark.asyncio
+async def test_door_code_request_triggers_code_creation(agent, memory, door_lock):
+    """When Claude calls create_door_code, the gateway is called and the code is logged."""
+    fake_response = _make_tool_response(
+        "create_door_code",
+        {
+            "starts_at": "2026-07-15T13:00:00+02:00",
+            "ends_at": "2026-07-18T15:00:00+02:00",
+            "code_name": "Alice — resa 42",
+        },
+    )
+
+    with patch.object(agent._client.messages, "create", return_value=fake_response):
+        await agent.run(
+            reservation_id=42,
+            event_type="door_code_request",
+            event_payload={
+                "starts_at": "2026-07-15T13:00:00+02:00",
+                "ends_at": "2026-07-18T15:00:00+02:00",
+            },
+            guest_name="Alice",
+        )
+
+    # Gateway was called with the window Claude provided
+    assert len(door_lock.created) == 1
+    assert door_lock.created[0].starts_at == "2026-07-15T13:00:00+02:00"
+    assert door_lock.created[0].ends_at == "2026-07-18T15:00:00+02:00"
+
+    # Events: door_code_request + door_code_created (with the PIN)
+    events = await memory.get_events(42)
+    assert events[-1].event_type == "door_code_created"
+    assert events[-1].payload["code"] != ""
+
+
+@pytest.mark.asyncio
+async def test_door_code_failure_appends_failed_event(agent, memory, door_lock):
+    """A DoorLockError from the gateway is logged as door_code_failed, not raised."""
+    door_lock.fail_with = "lock offline"
+    fake_response = _make_tool_response(
+        "create_door_code",
+        {"starts_at": "2026-07-15T13:00:00", "ends_at": "2026-07-18T15:00:00"},
+    )
+
+    with patch.object(agent._client.messages, "create", return_value=fake_response):
+        await agent.run(
+            reservation_id=42,
+            event_type="door_code_request",
+            event_payload={},
+            guest_name="Alice",
+        )
+
+    events = await memory.get_events(42)
+    assert events[-1].event_type == "door_code_failed"
+    assert "lock offline" in events[-1].payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_door_code_without_gateway_appends_failed_event(memory, notifier):
+    """If no gateway is configured, create_door_code logs a failure event."""
+    agent = AgentRunner(memory=memory, cleaner_notifier=notifier, anthropic_api_key="test")
+    fake_response = _make_tool_response(
+        "create_door_code",
+        {"starts_at": "2026-07-15T13:00:00", "ends_at": "2026-07-18T15:00:00"},
+    )
+
+    with patch.object(agent._client.messages, "create", return_value=fake_response):
+        await agent.run(
+            reservation_id=42,
+            event_type="door_code_request",
+            event_payload={},
+            guest_name="Alice",
+        )
+
+    events = await memory.get_events(42)
+    assert events[-1].event_type == "door_code_failed"
+    assert "MAKE_IGLOOHOME_WEBHOOK_URL" in events[-1].payload["error"]
 
 
 @pytest.mark.asyncio
