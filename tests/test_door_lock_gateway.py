@@ -7,6 +7,7 @@ runs without credentials or network access.
 """
 
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -145,3 +146,39 @@ async def test_make_gateway_raises_on_non_json_body(fake_make):
     gateway = MakeDoorLockGateway(webhook_url=f"http://127.0.0.1:{fake_make.server_port}")
     with pytest.raises(DoorLockError, match="non-JSON"):
         await gateway.create_code(_request())
+
+
+# -- LIVE contract: the real adapter against the real Make webhook -----------
+#
+# This is the test that would have caught the deployed bug: when the Make
+# scenario is queued/broken it replies with plain "Accepted", and
+# MakeDoorLockGateway raises DoorLockError("non-JSON body") — so
+# test_create_code_returns_non_empty_code (inherited from the contract) FAILS.
+#
+# It makes REAL calls (creates short, near-future Igloohome AlgoPINs on the
+# test device) so it is opt-in: it SKIPS unless both env vars are set. That
+# keeps it safe by default in CI. To run it — locally or in a dedicated/
+# scheduled CI job with the secrets provided:
+#
+#   MAKE_IGLOOHOME_WEBHOOK_URL=... \
+#   MAKE_IGLOOHOME_TEST_DEVICE_ID=<a real Igloohome device id> \
+#   pytest tests/test_door_lock_gateway.py -k Live
+#
+# AlgoPINs are algorithmic and self-expire, so the codes it mints need no
+# cleanup on the lock.
+
+_LIVE_URL = os.environ.get("MAKE_IGLOOHOME_WEBHOOK_URL", "").strip()
+_LIVE_DEVICE = os.environ.get("MAKE_IGLOOHOME_TEST_DEVICE_ID", "").strip()
+
+
+@pytest.mark.skipif(
+    not (_LIVE_URL and _LIVE_DEVICE),
+    reason="live Make integration: set MAKE_IGLOOHOME_WEBHOOK_URL and "
+    "MAKE_IGLOOHOME_TEST_DEVICE_ID (makes real calls that mint Igloohome codes)",
+)
+class TestMakeDoorLockLiveContract(DoorLockGatewayContract):
+    def create_gateway(self) -> MakeDoorLockGateway:
+        return MakeDoorLockGateway(
+            webhook_url=_LIVE_URL,
+            api_key=os.environ.get("MAKE_IGLOOHOME_API_KEY", "").strip(),
+        )
