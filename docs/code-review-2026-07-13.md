@@ -6,7 +6,7 @@ architecture and a few things that look wired-up but aren't. Ranked by impact.
 
 Status legend: ☐ open · ☑ done
 
-## ☐ 1. Dead architecture that no longer imports
+## ☑ 1. Dead architecture that no longer imports
 
 The repo migrated from a polling daemon to webhook-driven flow, but the old
 shell was only half deleted:

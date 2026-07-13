@@ -174,9 +174,6 @@ pip install -e ".[test]"
 
 # Run web UI + webhook server
 uvicorn src.web.app:app --port 8001 --reload
-
-# Run daemon (email poller) in a second terminal
-python scripts/run.py
 ```
 
 ## Running with Docker
