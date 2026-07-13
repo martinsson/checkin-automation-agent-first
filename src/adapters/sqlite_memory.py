@@ -21,12 +21,6 @@ _MIGRATIONS = [
 ]
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS seen_messages (
-    message_id     INTEGER PRIMARY KEY,
-    reservation_id INTEGER NOT NULL,
-    seen_at        TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS seen_action_items (
     action_item_id TEXT PRIMARY KEY,
     seen_at        TEXT NOT NULL
@@ -92,22 +86,6 @@ class SqliteRequestMemory(RequestMemory):
             except sqlite3.OperationalError:
                 pass  # column already exists
 
-    # -- message-level dedup -------------------------------------------------
-
-    async def has_message_been_seen(self, message_id: int) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM seen_messages WHERE message_id = ?", (message_id,)
-        ).fetchone()
-        return row is not None
-
-    async def mark_message_seen(self, message_id: int, reservation_id: int) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO seen_messages (message_id, reservation_id, seen_at)"
-            " VALUES (?, ?, ?)",
-            (message_id, reservation_id, _now()),
-        )
-        self._conn.commit()
-
     # -- action-item dedup (webhook idempotency) ------------------------------
 
     async def has_action_item_been_seen(self, action_item_id: str) -> bool:
@@ -125,13 +103,6 @@ class SqliteRequestMemory(RequestMemory):
         self._conn.commit()
 
     # -- request tracking ----------------------------------------------------
-
-    async def has_been_processed(self, reservation_id: int, intent: str) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM requests WHERE reservation_id = ? AND intent = ?",
-            (reservation_id, intent),
-        ).fetchone()
-        return row is not None
 
     async def save_request(
         self,
@@ -153,13 +124,6 @@ class SqliteRequestMemory(RequestMemory):
             (reservation_id, intent, RequestStatus.pending_ack.value, request_id,
              guest_message, _now(),
              guest_name, property_name, original_time, requested_time, relevant_date),
-        )
-        self._conn.commit()
-
-    async def update_status(self, request_id: str, status: str) -> None:
-        self._conn.execute(
-            "UPDATE requests SET status = ? WHERE request_id = ?",
-            (status, request_id),
         )
         self._conn.commit()
 
@@ -239,38 +203,6 @@ class SqliteRequestMemory(RequestMemory):
             " owner_comment = ?, reviewed_at = ? WHERE id = ?",
             (verdict, actual_message_sent, owner_comment, _now(), draft_id),
         )
-        self._conn.commit()
-
-    async def get_drafts_for_request(self, request_id: str) -> list[Draft]:
-        rows = self._conn.execute(
-            "SELECT * FROM drafts WHERE request_id = ? ORDER BY created_at",
-            (request_id,),
-        ).fetchall()
-        return [self._row_to_draft(r) for r in rows]
-
-    async def get_reviewed_unsent_drafts(self) -> list[Draft]:
-        rows = self._conn.execute(
-            "SELECT * FROM drafts WHERE verdict IN ('ok', 'nok') AND sent_at IS NULL"
-            " ORDER BY created_at"
-        ).fetchall()
-        return [self._row_to_draft(r) for r in rows]
-
-    async def mark_draft_sent(self, draft_id: int) -> None:
-        self._conn.execute(
-            "UPDATE drafts SET sent_at = ? WHERE id = ?",
-            (_now(), draft_id),
-        )
-        self._conn.commit()
-
-    # -- retry / compensation --------------------------------------------------
-
-    async def delete_request(self, request_id: str) -> None:
-        self._conn.execute("DELETE FROM drafts WHERE request_id = ?", (request_id,))
-        self._conn.execute("DELETE FROM requests WHERE request_id = ?", (request_id,))
-        self._conn.commit()
-
-    async def delete_seen_message(self, message_id: int) -> None:
-        self._conn.execute("DELETE FROM seen_messages WHERE message_id = ?", (message_id,))
         self._conn.commit()
 
     # -- agent event log -------------------------------------------------------

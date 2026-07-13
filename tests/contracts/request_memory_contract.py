@@ -13,50 +13,7 @@ class RequestMemoryContract(ABC):
     def create_memory(self) -> RequestMemory:
         ...
 
-    # -- message-level dedup -------------------------------------------------
-
-    @pytest.mark.asyncio
-    async def test_message_not_seen_by_default(self):
-        mem = self.create_memory()
-        assert await mem.has_message_been_seen(999) is False
-
-    @pytest.mark.asyncio
-    async def test_mark_and_check_message_seen(self):
-        mem = self.create_memory()
-        await mem.mark_message_seen(42, 101)
-        assert await mem.has_message_been_seen(42) is True
-
-    @pytest.mark.asyncio
-    async def test_mark_message_seen_is_idempotent(self):
-        mem = self.create_memory()
-        await mem.mark_message_seen(42, 101)
-        await mem.mark_message_seen(42, 101)  # must not raise
-        assert await mem.has_message_been_seen(42) is True
-
     # -- request tracking ----------------------------------------------------
-
-    @pytest.mark.asyncio
-    async def test_not_processed_by_default(self):
-        mem = self.create_memory()
-        assert await mem.has_been_processed(42, "early_checkin") is False
-
-    @pytest.mark.asyncio
-    async def test_save_then_check(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "Can I check in early?")
-        assert await mem.has_been_processed(42, "early_checkin") is True
-
-    @pytest.mark.asyncio
-    async def test_different_intents_are_independent(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "msg")
-        assert await mem.has_been_processed(42, "late_checkout") is False
-
-    @pytest.mark.asyncio
-    async def test_different_reservations_are_independent(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "msg")
-        assert await mem.has_been_processed(99, "early_checkin") is False
 
     @pytest.mark.asyncio
     async def test_get_history_returns_records(self):
@@ -84,14 +41,6 @@ class RequestMemoryContract(ABC):
         assert req.reservation_id == 42
         assert req.intent == "early_checkin"
         assert req.guest_message == "original msg"
-
-    @pytest.mark.asyncio
-    async def test_update_status(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "msg")
-        await mem.update_status("req-1", "pending_cleaner")
-        req = await mem.get_request("req-1")
-        assert req.status == "pending_cleaner"
 
     # -- draft management ----------------------------------------------------
 
@@ -161,48 +110,6 @@ class RequestMemoryContract(ABC):
         draft_id = await mem.save_draft("req-1", 42, "early_checkin", "acknowledgment", "Hi")
         draft = await mem.get_draft(draft_id)
         assert draft.sent_at is None
-
-    @pytest.mark.asyncio
-    async def test_get_reviewed_unsent_drafts(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "msg")
-
-        # pending draft — should NOT appear
-        await mem.save_draft("req-1", 42, "early_checkin", "acknowledgment", "Draft pending")
-
-        # reviewed ok, unsent — SHOULD appear
-        d_ok = await mem.save_draft("req-1", 42, "early_checkin", "cleaner_query", "Draft ok")
-        await mem.review_draft(d_ok, "ok")
-
-        # reviewed nok, unsent — SHOULD appear
-        d_nok = await mem.save_draft("req-1", 42, "early_checkin", "guest_reply", "Draft nok")
-        await mem.review_draft(d_nok, "nok", actual_message_sent="Fixed text")
-
-        # reviewed ok, already sent — should NOT appear
-        d_sent = await mem.save_draft("req-1", 42, "early_checkin", "followup", "Draft sent")
-        await mem.review_draft(d_sent, "ok")
-        await mem.mark_draft_sent(d_sent)
-
-        unsent = await mem.get_reviewed_unsent_drafts()
-        ids = [d.draft_id for d in unsent]
-        assert d_ok in ids
-        assert d_nok in ids
-        assert len(unsent) == 2
-
-    @pytest.mark.asyncio
-    async def test_mark_draft_sent(self):
-        mem = self.create_memory()
-        await mem.save_request(42, "early_checkin", "req-1", "msg")
-        draft_id = await mem.save_draft("req-1", 42, "early_checkin", "acknowledgment", "Hi")
-        await mem.review_draft(draft_id, "ok")
-
-        await mem.mark_draft_sent(draft_id)
-
-        draft = await mem.get_draft(draft_id)
-        assert draft.sent_at is not None
-        # no longer appears in unsent
-        unsent = await mem.get_reviewed_unsent_drafts()
-        assert all(d.draft_id != draft_id for d in unsent)
 
     # -- agent event log -------------------------------------------------------
 

@@ -59,18 +59,6 @@ class RequestMemory(ABC):
     those are tracked independently (different intent values).
     """
 
-    # -- message-level dedup -------------------------------------------------
-
-    @abstractmethod
-    async def has_message_been_seen(self, message_id: int) -> bool:
-        """True if this message_id was already classified in a previous cycle."""
-        ...
-
-    @abstractmethod
-    async def mark_message_seen(self, message_id: int, reservation_id: int) -> None:
-        """Record that this message_id has been classified."""
-        ...
-
     # -- action-item dedup (webhook idempotency) ------------------------------
 
     @abstractmethod
@@ -86,11 +74,6 @@ class RequestMemory(ABC):
     # -- request tracking ----------------------------------------------------
 
     @abstractmethod
-    async def has_been_processed(self, reservation_id: int, intent: str) -> bool:
-        """True if this intent already has a request for this reservation."""
-        ...
-
-    @abstractmethod
     async def save_request(
         self,
         reservation_id: int,
@@ -104,11 +87,6 @@ class RequestMemory(ABC):
         relevant_date: str = "",
     ) -> None:
         """Create a new request record."""
-        ...
-
-    @abstractmethod
-    async def update_status(self, request_id: str, status: str) -> None:
-        """Update the status of a request."""
         ...
 
     @abstractmethod
@@ -160,33 +138,6 @@ class RequestMemory(ABC):
         actual_message_sent: what the owner actually sent (if different from draft)
         owner_comment: why the owner changed it (learning data for prompts)
         """
-        ...
-
-    @abstractmethod
-    async def get_drafts_for_request(self, request_id: str) -> list[Draft]:
-        """Return all drafts for a given request_id, ordered by created_at."""
-        ...
-
-    @abstractmethod
-    async def get_reviewed_unsent_drafts(self) -> list[Draft]:
-        """Return drafts where verdict IN ('ok','nok') AND sent_at IS NULL, ordered by created_at."""
-        ...
-
-    @abstractmethod
-    async def mark_draft_sent(self, draft_id: int) -> None:
-        """Set sent_at to current UTC timestamp for the given draft."""
-        ...
-
-    # -- retry / compensation --------------------------------------------------
-
-    @abstractmethod
-    async def delete_request(self, request_id: str) -> None:
-        """Delete a request and all its drafts. Used by retry script."""
-        ...
-
-    @abstractmethod
-    async def delete_seen_message(self, message_id: int) -> None:
-        """Remove the seen_messages entry so the message can be re-classified."""
         ...
 
     # -- agent event log -------------------------------------------------------

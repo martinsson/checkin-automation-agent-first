@@ -1,4 +1,4 @@
-.PHONY: install test run-web run-daemon deploy deploy-cocon-site deploy-proxy
+.PHONY: install test run-web deploy deploy-cocon-site deploy-proxy
 
 # Hetzner server — configure 'hetzner' alias in ~/.ssh/config, or override:
 #   make deploy SERVER=root@1.2.3.4
@@ -19,9 +19,6 @@ test:
 
 run-web:
 	uvicorn src.web.app:app --host 0.0.0.0 --port 8001 --reload
-
-run-daemon:
-	python scripts/run.py
 
 # ---------------------------------------------------------------------------
 # Build & Deploy to Hetzner
