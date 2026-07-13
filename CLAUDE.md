@@ -74,11 +74,45 @@ rows there for new cleaners or the not-yet-covered flats (Velours T2, Studio
 Écrin). Uses `BEDS24_READ_ALL_TOKEN`. Cleaners: **V-Clean** (Januario Lima —
 Terracotta/La Palma €35, Le Fernand €65) and **Guilherme Veloso** (Le Matisse €60).
 
+## Payment reconciliation (direct bookings)
+
+`scripts/payment_reconcile.py` checks that guests on **direct** bookings (not
+Airbnb/Booking.com — those are collected by the channel) have paid by bank
+transfer before arrival. Deterministic, no LLM:
+
+1. Reads upcoming arrivals from Beds24 (`includeInvoiceItems=true`), keeps direct
+   bookings with a balance due (`referer` not in `COLLECTED_CHANNELS`).
+2. Reads incoming-transfer alerts from the Gmail inbox over IMAP — Banque
+   Populaire (`nepasrepondre@banquepopulaire.fr`, "Suite Entreprise" / alerts) and
+   Qonto (`support@qonto.com`).
+3. Matches by amount (±1€) with a guest-name hint and classifies each booking:
+   `PAID` / `WRONG_AMOUNT` / `UNPAID` (arrival near, nothing matched → chase).
+
+```bash
+python3 scripts/payment_reconcile.py                 # next 5 days, report only
+python3 scripts/payment_reconcile.py --days 10 --email-to martinsson.johan@changit.fr
+python3 scripts/payment_reconcile.py --mark-paid     # write matched payments to Beds24
+```
+
+Uses `BEDS24_READ_ALL_TOKEN` for reads and, only for `--mark-paid`, mints a
+write token from `BEDS24_REFRESH_TOKEN` and posts a `payment` invoice item
+(idempotent: tagged `[auto-reconcile:<sig>]`, skipped if already present). So
+once a transfer is recorded, the booking's balance hits 0 and it stops being
+flagged. Bank e-mail senders + collected-channel list are constants at the top of
+the script. Tests: `tests/test_payment_reconcile.py` (real BP/Qonto wording).
+
+Note: this must run where it can reach `api.beds24.com` + Gmail IMAP (the box, or
+a local machine) — not the Cowork sandbox, whose network is restricted.
+
 ## Door codes / self check-in
 
 See [docs/door-codes.md](./docs/door-codes.md) →
 [docs/igloohome-make-scenario.md](./docs/igloohome-make-scenario.md). PIN
 generation runs in a Make.com scenario (id 5738113), not in this repo.
+
+**Sending an ad-hoc/early-checkin code to the guest** is designed but not built:
+[docs/plans/early-checkin-code-to-guest.md](./docs/plans/early-checkin-code-to-guest.md)
+(detect-if-already-sent + app-side deferred queue; two facts still open).
 
 **Access text for tradespeople** (plumber/electrician): follow
 [docs/handyman-access-text.md](./docs/handyman-access-text.md) — fetch arrival +
