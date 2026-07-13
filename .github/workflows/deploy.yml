@@ -15,6 +15,10 @@ name: Deploy
 #                        When set, it's upserted into the server .env at deploy time
 #                        so the /door-codes form and agent tool can create codes.
 #   MAKE_IGLOOHOME_API_KEY     — optional key if that webhook requires one.
+#   BEDS24_READ_ALL_TOKEN      — long-life Beds24 read token. Powers the
+#                        /early-checkin form (list a property's upcoming reservations).
+#   BEDS24_REFRESH_TOKEN       — Beds24 refresh token; mints a write token so
+#                        /early-checkin can send the guest their access code.
 #
 # The .env file itself is never rsynced by this workflow (same as `make deploy` —
 # it lives only on the server; see the Makefile header for first-time setup).
@@ -71,6 +75,8 @@ jobs:
         env:
           MAKE_IGLOOHOME_WEBHOOK_URL: ${{ secrets.MAKE_IGLOOHOME_WEBHOOK_URL }}
           MAKE_IGLOOHOME_API_KEY: ${{ secrets.MAKE_IGLOOHOME_API_KEY }}
+          BEDS24_READ_ALL_TOKEN: ${{ secrets.BEDS24_READ_ALL_TOKEN }}
+          BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
         run: |
           set -euo pipefail
           # Must match REMOTE_DIR in the Makefile.
@@ -97,6 +103,8 @@ jobs:
 
           upsert MAKE_IGLOOHOME_WEBHOOK_URL "${MAKE_IGLOOHOME_WEBHOOK_URL:-}"
           upsert MAKE_IGLOOHOME_API_KEY "${MAKE_IGLOOHOME_API_KEY:-}"
+          upsert BEDS24_READ_ALL_TOKEN "${BEDS24_READ_ALL_TOKEN:-}"
+          upsert BEDS24_REFRESH_TOKEN "${BEDS24_REFRESH_TOKEN:-}"
 
       - name: Deploy
         run: make deploy SERVER=deploy-target
