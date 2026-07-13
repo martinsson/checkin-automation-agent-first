@@ -85,8 +85,10 @@ def test_create_only_makes_code_without_sending():
             "property_name": "La Palma",
             "reservation_id": "99001",
             "guest_name": "Alice Martin",
-            "starts_at": "2026-08-03T14:00",
-            "ends_at": "2026-08-10T12:00",
+            "start_date": "2026-08-03",
+            "start_hour": "14",
+            "end_date": "2026-08-10",
+            "end_hour": "12",
         },
     )
     assert resp.status_code == 200
@@ -104,8 +106,10 @@ def test_create_and_send_messages_the_guest():
             "property_name": "La Palma",
             "reservation_id": "99001",
             "guest_name": "Alice Martin",
-            "starts_at": "2026-08-03T14:00",
-            "ends_at": "2026-08-10T12:00",
+            "start_date": "2026-08-03",
+            "start_hour": "14",
+            "end_date": "2026-08-10",
+            "end_hour": "12",
         },
     )
     assert resp.status_code == 200
@@ -130,8 +134,10 @@ def test_send_failure_still_shows_code_with_error():
             "property_name": "La Palma",
             "reservation_id": "99001",
             "guest_name": "Alice Martin",
-            "starts_at": "2026-08-03T14:00",
-            "ends_at": "2026-08-10T12:00",
+            "start_date": "2026-08-03",
+            "start_hour": "14",
+            "end_date": "2026-08-10",
+            "end_hour": "12",
         },
     )
     assert resp.status_code == 200
@@ -148,8 +154,10 @@ def test_missing_reservation_is_rejected():
             "action": "create_send",
             "property_name": "La Palma",
             "reservation_id": "",
-            "starts_at": "2026-08-03T14:00",
-            "ends_at": "2026-08-10T12:00",
+            "start_date": "2026-08-03",
+            "start_hour": "14",
+            "end_date": "2026-08-10",
+            "end_hour": "12",
         },
     )
     assert resp.status_code == 400

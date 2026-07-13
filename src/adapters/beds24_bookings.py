@@ -94,7 +94,8 @@ class Beds24BookingGateway(GuestBookingGateway):
         except httpx.HTTPError as exc:
             raise BookingGatewayError(f"Beds24 message request failed: {exc}") from exc
 
-        if resp.status_code != 200:
+        # Beds24 answers a successful message POST with HTTP 201 (created).
+        if resp.status_code not in (200, 201):
             raise BookingGatewayError(
                 f"Beds24 message returned HTTP {resp.status_code}: {resp.text[:200]}"
             )

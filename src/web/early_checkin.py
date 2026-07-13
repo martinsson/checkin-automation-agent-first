@@ -57,8 +57,8 @@ _FORM_JS = """
     var prop = document.getElementById('property');
     var resSel = document.getElementById('reservation');
     var guest = document.getElementById('guest_name');
-    var startI = document.getElementById('starts_at');
-    var endI = document.getElementById('ends_at');
+    var startI = document.getElementById('start_date');
+    var endI = document.getElementById('end_date');
 
     function fmt(d) { if (!d) return ''; var p = d.split('-'); return p[2] + '/' + p[1]; }
 
@@ -89,13 +89,23 @@ _FORM_JS = """
     resSel.addEventListener('change', function () {
       var o = resSel.options[resSel.selectedIndex];
       if (!o || !o.value) { startI.value = ''; endI.value = ''; guest.value = ''; return; }
-      startI.value = o.dataset.arrival + 'T14:00';
-      endI.value = o.dataset.departure + 'T12:00';
+      // Dates come from the reservation; the hours keep their defaults (14 / 12),
+      // so an early check-in is just a change of the start hour.
+      startI.value = o.dataset.arrival;
+      endI.value = o.dataset.departure;
       guest.value = o.dataset.name || '';
     });
   })();
 </script>
 """
+
+
+def _hour_options(selected: int) -> str:
+    """<option> list for an hour dropdown (00:00–23:00), one pre-selected."""
+    return "\n".join(
+        f'<option value="{h:02d}"{" selected" if h == selected else ""}>{h:02d}:00</option>'
+        for h in range(24)
+    )
 
 
 def _form_page(
@@ -132,12 +142,22 @@ def _form_page(
       </select>
       {note_html}
       <input type="hidden" id="guest_name" name="guest_name" value="" />
-      <label for="starts_at">Valid from</label>
-      <input id="starts_at" type="datetime-local" name="starts_at" required />
-      <label for="ends_at">Valid until</label>
-      <input id="ends_at" type="datetime-local" name="ends_at" required />
-      <p class="hint">Defaults to arrival 14:00 → departure 12:00. Igloohome codes
-         run on the hour (minutes are rounded).</p>
+      <label for="start_date">Valid from</label>
+      <div class="dt-row">
+        <input id="start_date" type="date" name="start_date" required />
+        <select id="start_hour" name="start_hour" class="hour" aria-label="Start hour">
+          {_hour_options(14)}
+        </select>
+      </div>
+      <label for="end_date">Valid until</label>
+      <div class="dt-row">
+        <input id="end_date" type="date" name="end_date" required />
+        <select id="end_hour" name="end_hour" class="hour" aria-label="End hour">
+          {_hour_options(12)}
+        </select>
+      </div>
+      <p class="hint">Date fills in from the reservation — for an early check-in
+         just change the start hour. Defaults: from 14:00 → until 12:00.</p>
       <button type="submit" name="action" value="create_send">Create &amp; send to guest</button>
       <button type="submit" name="action" value="create" class="secondary">Create only</button>
     </form>
@@ -200,8 +220,15 @@ async def create_early_checkin(request: Request):
     property_name = str(form.get("property_name", "")).strip()
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
-    starts_at_raw = str(form.get("starts_at", "")).strip()
-    ends_at_raw = str(form.get("ends_at", "")).strip()
+    # The form submits date + hour separately (hour is the field the owner nudges
+    # for an early check-in); recombine into the "YYYY-MM-DDTHH:MM" the rounding
+    # helpers expect.
+    start_date = str(form.get("start_date", "")).strip()
+    end_date = str(form.get("end_date", "")).strip()
+    start_hour = str(form.get("start_hour", "")).strip()
+    end_hour = str(form.get("end_hour", "")).strip()
+    starts_at_raw = f"{start_date}T{start_hour}:00" if start_date and start_hour else ""
+    ends_at_raw = f"{end_date}T{end_hour}:00" if end_date and end_hour else ""
 
     door_lock = getattr(request.app.state, "door_lock", None)
     if door_lock is None:

@@ -121,6 +121,11 @@ button.copy {
 button.copy:hover { background: #f1f8f2; }
 button.copy.done { background: #4caf50; color: #fff; border-color: #4caf50; }
 
+/* Date + hour on one row: the date auto-fills, so only the hour is nudged. */
+.dt-row { display: flex; gap: 0.6rem; align-items: stretch; }
+.dt-row input[type="date"] { flex: 1; margin-bottom: 1.1rem; }
+.dt-row select.hour { flex: 0 0 auto; width: auto; min-width: 6rem; margin-bottom: 1.1rem; }
+
 /* Secondary action (e.g. "Create only" next to a primary "Create & send"). */
 button.secondary { background: #fff; color: #2d6a4f; border: 1px solid #cbd5e1; }
 button.secondary:hover { background: #f8fafc; }
