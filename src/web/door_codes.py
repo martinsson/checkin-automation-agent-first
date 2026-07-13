@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 
 from src.config.device_map import load_device_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
+from src.web.layout import brand, page
 
 log = logging.getLogger(__name__)
 
@@ -65,12 +66,7 @@ def _form_page(
     property_name: str = "",
     error: str = "",
 ) -> str:
-    error_html = (
-        f'<p style="background:#fdecea;padding:0.8em;border-left:3px solid #f44336">'
-        f"{html.escape(error)}</p>"
-        if error
-        else ""
-    )
+    error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
 
     selected = property_name.strip().casefold()
     options = ['<option value="">— Default lock —</option>']
@@ -81,48 +77,27 @@ def _form_page(
         )
     property_options = "\n".join(options)
 
-    return f"""
-<!DOCTYPE html>
-<html>
-<head><title>Create Door Code</title></head>
-<body>
-  <h2>Create a door code</h2>
-  <p>Creates a temporary Igloohome code via Make (handyman, early guest, ...).</p>
-  {error_html}
-  <form method="post" action="/door-codes" style="max-width:420px">
-    <p>
-      <label>For whom (optional)<br>
-        <input name="person_name" value="{html.escape(person_name)}"
-               placeholder="e.g. Plombier Dupont — just a label" style="width:100%" autofocus />
-      </label>
-    </p>
-    <p>
-      <label>Property<br>
-        <select name="property_name" style="width:100%">
-          {property_options}
-        </select>
-      </label>
-    </p>
-    <p>
-      <label>Valid from<br>
-        <input type="datetime-local" name="starts_at" value="{starts_at}" required />
-      </label>
-    </p>
-    <p>
-      <label>Valid until<br>
-        <input type="datetime-local" name="ends_at" value="{ends_at}" required />
-      </label>
-    </p>
-    <p style="color:#666;font-size:0.9em">Igloohome codes start and end on the hour —
-       minutes are rounded (start down, end up).</p>
-    <button type="submit" style="background:green;color:white;padding:.5em 1em">
-      Create code
-    </button>
-  </form>
-  <p><a href="/review">Back to drafts</a> — <a href="/logout">Logout</a></p>
-</body>
-</html>
-"""
+    content = f"""{brand(logo="🔐", heading="Create a door code",
+                         subtitle="Temporary Igloohome code via Make")}
+    {error_html}
+    <form method="post" action="/door-codes">
+      <label for="person_name">For whom (optional)</label>
+      <input id="person_name" name="person_name" value="{html.escape(person_name)}"
+             placeholder="e.g. Plombier Dupont — just a label" autofocus />
+      <label for="property_name">Property</label>
+      <select id="property_name" name="property_name">
+        {property_options}
+      </select>
+      <label for="starts_at">Valid from</label>
+      <input id="starts_at" type="datetime-local" name="starts_at" value="{starts_at}" required />
+      <label for="ends_at">Valid until</label>
+      <input id="ends_at" type="datetime-local" name="ends_at" value="{ends_at}" required />
+      <p class="hint">Igloohome codes start and end on the hour — minutes are rounded
+         (start down, end up).</p>
+      <button type="submit">Create code</button>
+    </form>
+    <p class="links"><a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
+    return page(title="Create Door Code", content=content)
 
 
 def _round_to_hours(starts_at: str, ends_at: str) -> tuple[str, str]:
@@ -206,22 +181,46 @@ async def create_door_code(request: Request):
         "Manual door code created for %r window=%s→%s code_id=%s",
         person_name, starts_at, ends_at, door_code.code_id,
     )
-    return HTMLResponse(f"""
-<!DOCTYPE html>
-<html>
-<head><title>Door Code Created</title></head>
-<body>
-  <h2>Code created ✓</h2>
-  <p style="font-size:2.5em;letter-spacing:0.15em;background:#e8f5e9;
-            padding:0.5em;display:inline-block;border-left:3px solid #4CAF50">
-    <strong>{html.escape(door_code.code)}</strong>
-  </p>
-  <p>
-    {f"For: <strong>{html.escape(person_name)}</strong><br>" if person_name else ""}
-    {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
-    Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
-  </p>
-  <p><a href="/door-codes">Create another code</a> — <a href="/review">Back to drafts</a></p>
-</body>
-</html>
-""")
+    content = f"""{brand(logo="✅", heading="Code created")}
+    <div class="success">
+      <div class="code" id="code">{html.escape(door_code.code)}</div>
+      <button type="button" class="inline copy" id="copy-btn">Copy code</button>
+    </div>
+    <script>
+      (function () {{
+        var btn = document.getElementById('copy-btn');
+        var code = document.getElementById('code').textContent.trim();
+        btn.addEventListener('click', function () {{
+          function done() {{
+            btn.textContent = 'Copied \\u2713';
+            btn.classList.add('done');
+            setTimeout(function () {{
+              btn.textContent = 'Copy code';
+              btn.classList.remove('done');
+            }}, 1500);
+          }}
+          if (navigator.clipboard && navigator.clipboard.writeText) {{
+            navigator.clipboard.writeText(code).then(done, fallback);
+          }} else {{
+            fallback();
+          }}
+          function fallback() {{
+            var ta = document.createElement('textarea');
+            ta.value = code;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus(); ta.select();
+            try {{ document.execCommand('copy'); done(); }} catch (e) {{}}
+            document.body.removeChild(ta);
+          }}
+        }});
+      }})();
+    </script>
+    <p class="meta">
+      {f"For: <strong>{html.escape(person_name)}</strong><br>" if person_name else ""}
+      {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
+      Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
+    </p>
+    <p class="links"><a href="/door-codes">Create another</a> · <a href="/review">Drafts</a></p>"""
+    return HTMLResponse(page(title="Door Code Created", content=content))

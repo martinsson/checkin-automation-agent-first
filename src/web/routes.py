@@ -4,8 +4,12 @@ Review UI routes — owner approves or rejects AI-generated draft replies.
 
 import logging
 
+import html
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+from src.web.layout import brand, page
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ async def review_list(request: Request):
     drafts = await memory.get_pending_drafts()
 
     if not drafts:
-        body = "<p>No pending drafts.</p>"
+        body = '<p class="empty">No pending drafts.</p>'
     else:
         items = []
         for d in drafts:
@@ -33,59 +37,51 @@ async def review_list(request: Request):
             events = await memory.get_events(d.reservation_id)
             context_html = ""
             for e in events:
+                p = e.payload
                 if e.event_type == "hostbuddy_action_item":
-                    p = e.payload
                     context_html += f"""
-<div style="background:#e8f4fd;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #2196F3">
-  <strong>Guest request</strong> ({p.get('category', '')})<br>
-  Guest: {p.get('guest_name', '')} — Property: {p.get('property_name', '')}<br>
-  <em>{p.get('message_summary', '')}</em>
+<div class="ctx ctx--guest">
+  <strong>Guest request</strong> ({html.escape(str(p.get('category', '')))})<br>
+  Guest: {html.escape(str(p.get('guest_name', '')))} — Property: {html.escape(str(p.get('property_name', '')))}<br>
+  <em>{html.escape(str(p.get('message_summary', '')))}</em>
 </div>"""
                 elif e.event_type == "cleaner_email_sent":
-                    p = e.payload
                     context_html += f"""
-<div style="background:#fff3e0;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #FF9800">
-  <strong>Email sent to cleaner</strong> (date: {p.get('date', '')})<br>
-  <pre style="margin:0.3em 0;white-space:pre-wrap">{p.get('message', '')}</pre>
+<div class="ctx ctx--out">
+  <strong>Email sent to cleaner</strong> (date: {html.escape(str(p.get('date', '')))})<br>
+  <pre>{html.escape(str(p.get('message', '')))}</pre>
 </div>"""
                 elif e.event_type == "cleaner_reply":
-                    p = e.payload
                     context_html += f"""
-<div style="background:#e8f5e9;padding:0.8em;margin-bottom:0.5em;border-left:3px solid #4CAF50">
+<div class="ctx ctx--reply">
   <strong>Cleaner reply</strong><br>
-  <em>{p.get('raw_text', '')}</em>
+  <em>{html.escape(str(p.get('raw_text', '')))}</em>
 </div>"""
 
             items.append(f"""
-<div style="border:1px solid #ccc; margin:1em; padding:1em;">
-  <strong>Draft #{d.draft_id}</strong> — reservation {d.reservation_id} — {d.intent} — {d.step}<br>
-  <em>{d.created_at.strftime('%Y-%m-%d %H:%M UTC')}</em>
-  <h4 style="margin:0.8em 0 0.3em">Context</h4>
+<div class="draft">
+  <h3>Draft #{d.draft_id} · {html.escape(str(d.intent))} · {html.escape(str(d.step))}</h3>
+  <div class="when">reservation {d.reservation_id} — {d.created_at.strftime('%Y-%m-%d %H:%M UTC')}</div>
+  <h4>Context</h4>
   {context_html}
-  <h4 style="margin:0.8em 0 0.3em">Proposed reply to guest</h4>
-  <pre style="background:#f5f5f5;padding:1em">{d.draft_body}</pre>
-  <form method="post" action="/review/{d.draft_id}/approve" style="display:inline">
-    <button type="submit" style="background:green;color:white;padding:.5em 1em">Approve &amp; Send</button>
-  </form>
-  &nbsp;
-  <form method="post" action="/review/{d.draft_id}/reject" style="display:inline">
-    <input name="comment" placeholder="Why rejected?" style="width:300px" />
-    <button type="submit" style="background:red;color:white;padding:.5em 1em">Reject</button>
-  </form>
+  <h4>Proposed reply to guest</h4>
+  <pre class="reply">{html.escape(str(d.draft_body))}</pre>
+  <div class="actions">
+    <form method="post" action="/review/{d.draft_id}/approve">
+      <button type="submit" class="inline">Approve &amp; Send</button>
+    </form>
+    <form method="post" action="/review/{d.draft_id}/reject">
+      <input name="comment" placeholder="Why rejected?" />
+      <button type="submit" class="inline danger">Reject</button>
+    </form>
+  </div>
 </div>""")
         body = "\n".join(items)
 
-    return HTMLResponse(f"""
-<!DOCTYPE html>
-<html>
-<head><title>Draft Review</title></head>
-<body>
-  <h2>Pending Drafts</h2>
-  {body}
-  <p><a href="/door-codes">Create door code</a> — <a href="/logout">Logout</a></p>
-</body>
-</html>
-""")
+    content = f"""{brand(logo="📋", heading="Pending Drafts")}
+    {body}
+    <p class="links"><a href="/door-codes">Create door code</a> · <a href="/logout">Logout</a></p>"""
+    return HTMLResponse(page(title="Draft Review", content=content, max_width="720px"))
 
 
 @router.post("/review/{draft_id}/approve")

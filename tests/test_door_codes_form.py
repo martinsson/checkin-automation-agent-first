@@ -49,7 +49,7 @@ def test_form_shows_property_dropdown_with_apartment_names():
     client, _ = _make_client()
     resp = client.get("/door-codes")
     assert resp.status_code == 200
-    assert '<select name="property_name"' in resp.text
+    assert '<select id="property_name" name="property_name"' in resp.text
     # apartment names from the device map appear as options
     assert "Le Fernand" in resp.text
     assert "Terracotta" in resp.text
