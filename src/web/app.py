@@ -25,6 +25,7 @@ from src.web.routes import router as review_router
 from src.web.hostbuddy_webhook import router as webhook_router
 from src.web.contact import router as contact_router
 from src.web.door_codes import router as door_codes_router
+from src.web.early_checkin import router as early_checkin_router
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +68,20 @@ def create_app() -> FastAPI:
             api_key=os.environ.get("MAKE_IGLOOHOME_API_KEY", "").strip(),
         )
 
+    # Beds24 gateway powers the /early-checkin form (list reservations + message
+    # the guest). Reads use the long-life read token; sending needs the refresh
+    # token to mint a write token. Absent tokens → the form still renders but
+    # can't list reservations or send.
+    booking_gateway = None
+    beds24_read_token = os.environ.get("BEDS24_READ_ALL_TOKEN", "").strip()
+    if beds24_read_token:
+        from src.adapters.beds24_bookings import Beds24BookingGateway
+
+        booking_gateway = Beds24BookingGateway(
+            read_token=beds24_read_token,
+            refresh_token=os.environ.get("BEDS24_REFRESH_TOKEN", "").strip(),
+        )
+
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)
 
     application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
@@ -74,6 +89,7 @@ def create_app() -> FastAPI:
     application.state.memory = memory
     application.state.agent = agent
     application.state.door_lock = door_lock
+    application.state.booking_gateway = booking_gateway
 
     application.add_middleware(AuthMiddleware, review_token=review_token)
     application.include_router(auth_router)
@@ -81,6 +97,7 @@ def create_app() -> FastAPI:
     application.include_router(webhook_router)
     application.include_router(contact_router)
     application.include_router(door_codes_router)
+    application.include_router(early_checkin_router)
 
     log.info("Web UI started. DB: %s", db_path)
     return application

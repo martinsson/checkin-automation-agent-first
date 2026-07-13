@@ -80,7 +80,7 @@ async def review_list(request: Request):
 
     content = f"""{brand(logo="📋", heading="Pending Drafts")}
     {body}
-    <p class="links"><a href="/door-codes">Create door code</a> · <a href="/logout">Logout</a></p>"""
+    <p class="links"><a href="/early-checkin">Early check-in</a> · <a href="/door-codes">Ad-hoc code</a> · <a href="/logout">Logout</a></p>"""
     return HTMLResponse(page(title="Draft Review", content=content, max_width="720px"))
 
 

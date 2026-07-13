@@ -4,6 +4,8 @@ codes, ...). One place for the CSS and the card/brand chrome so the pages stay
 consistent without each one re-declaring styles.
 """
 
+import html
+
 # The whole design system in one stylesheet. Plain string (not an f-string), so
 # CSS braces are written normally.
 _CSS = """
@@ -119,6 +121,11 @@ button.copy {
 button.copy:hover { background: #f1f8f2; }
 button.copy.done { background: #4caf50; color: #fff; border-color: #4caf50; }
 
+/* Secondary action (e.g. "Create only" next to a primary "Create & send"). */
+button.secondary { background: #fff; color: #2d6a4f; border: 1px solid #cbd5e1; }
+button.secondary:hover { background: #f8fafc; }
+button + button { margin-top: 0.6rem; }
+
 /* Mobile-first: this console is used mostly on phones. */
 @media (max-width: 480px) {
   body { padding: 0.75rem; }
@@ -135,6 +142,40 @@ def brand(*, logo: str, heading: str, subtitle: str = "") -> str:
     """The centered emoji + title header at the top of a card."""
     sub = f"<p>{subtitle}</p>" if subtitle else ""
     return f'<div class="brand"><div class="logo">{logo}</div><h1>{heading}</h1>{sub}</div>'
+
+
+def code_result(code: str) -> str:
+    """The green code box with a one-tap Copy button (Clipboard API + fallback)."""
+    return f"""<div class="success">
+      <div class="code" id="code">{html.escape(code)}</div>
+      <button type="button" class="inline copy" id="copy-btn">Copy code</button>
+    </div>
+    <script>
+      (function () {{
+        var btn = document.getElementById('copy-btn');
+        var code = document.getElementById('code').textContent.trim();
+        btn.addEventListener('click', function () {{
+          function done() {{
+            btn.textContent = 'Copied \\u2713';
+            btn.classList.add('done');
+            setTimeout(function () {{
+              btn.textContent = 'Copy code';
+              btn.classList.remove('done');
+            }}, 1500);
+          }}
+          function fallback() {{
+            var ta = document.createElement('textarea');
+            ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            try {{ document.execCommand('copy'); done(); }} catch (e) {{}}
+            document.body.removeChild(ta);
+          }}
+          if (navigator.clipboard && navigator.clipboard.writeText) {{
+            navigator.clipboard.writeText(code).then(done, fallback);
+          }} else {{ fallback(); }}
+        }});
+      }})();
+    </script>"""
 
 
 def page(*, title: str, content: str, max_width: str = "420px") -> str:

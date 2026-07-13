@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 
 from src.config.device_map import load_device_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
-from src.web.layout import brand, page
+from src.web.layout import brand, code_result, page
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _form_page(
          (start down, end up).</p>
       <button type="submit">Create code</button>
     </form>
-    <p class="links"><a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
+    <p class="links"><a href="/early-checkin">Early check-in</a> · <a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
     return page(title="Create Door Code", content=content)
 
 
@@ -182,41 +182,7 @@ async def create_door_code(request: Request):
         person_name, starts_at, ends_at, door_code.code_id,
     )
     content = f"""{brand(logo="✅", heading="Code created")}
-    <div class="success">
-      <div class="code" id="code">{html.escape(door_code.code)}</div>
-      <button type="button" class="inline copy" id="copy-btn">Copy code</button>
-    </div>
-    <script>
-      (function () {{
-        var btn = document.getElementById('copy-btn');
-        var code = document.getElementById('code').textContent.trim();
-        btn.addEventListener('click', function () {{
-          function done() {{
-            btn.textContent = 'Copied \\u2713';
-            btn.classList.add('done');
-            setTimeout(function () {{
-              btn.textContent = 'Copy code';
-              btn.classList.remove('done');
-            }}, 1500);
-          }}
-          if (navigator.clipboard && navigator.clipboard.writeText) {{
-            navigator.clipboard.writeText(code).then(done, fallback);
-          }} else {{
-            fallback();
-          }}
-          function fallback() {{
-            var ta = document.createElement('textarea');
-            ta.value = code;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.focus(); ta.select();
-            try {{ document.execCommand('copy'); done(); }} catch (e) {{}}
-            document.body.removeChild(ta);
-          }}
-        }});
-      }})();
-    </script>
+    {code_result(door_code.code)}
     <p class="meta">
       {f"For: <strong>{html.escape(person_name)}</strong><br>" if person_name else ""}
       {f"Property: {html.escape(property_name)}<br>" if property_name else ""}

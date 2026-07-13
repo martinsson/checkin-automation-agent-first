@@ -1,0 +1,17 @@
+# Property display name → Beds24 propertyId.
+#
+# Used by the /early-checkin form to list a property's upcoming reservations and
+# to send a guest the ad-hoc access code on the right booking. Names MUST match
+# those in igloohome_devices.yaml so the property→device lookup still resolves
+# when the code is created.
+#
+# ids sourced from the Beds24 property table (see CLAUDE.md). Hippocrate is not
+# in Beds24, so it is intentionally absent here.
+
+properties:
+  "Velours T2": 318188
+  "Studio Écrin": 318189
+  "Terracotta": 326123
+  "Le Matisse": 326234
+  "La Palma": 326275
+  "Le Fernand": 328510
