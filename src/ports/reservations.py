@@ -19,6 +19,7 @@ class Reservation:
     departure: str    # ISO date "YYYY-MM-DD"
     channel: str = "" # e.g. "airbnb", "booking", "direct" — for display
     status: str = ""
+    language: str = ""  # guest's preferred language code, e.g. "fr" / "en"
 
 
 class BookingGatewayError(Exception):

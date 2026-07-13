@@ -40,7 +40,7 @@ label {
   color: #374151;
   margin-bottom: 0.35rem;
 }
-input, select {
+input, select, textarea {
   width: 100%;
   padding: 0.7rem 0.8rem;
   margin-bottom: 1.1rem;
@@ -50,7 +50,8 @@ input, select {
   background: #fff;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-input:focus, select:focus {
+textarea { font-family: inherit; line-height: 1.45; resize: vertical; }
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: #2d6a4f;
   box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.15);

@@ -42,6 +42,7 @@ def _reservations_json(reservations: list[Reservation]) -> str:
                 "arrival": r.arrival,
                 "departure": r.departure,
                 "channel": r.channel,
+                "lang": r.language,
             }
         )
     return json.dumps(grouped)
@@ -59,6 +60,7 @@ _FORM_JS = """
     var guest = document.getElementById('guest_name');
     var startI = document.getElementById('start_date');
     var endI = document.getElementById('end_date');
+    var langI = document.getElementById('guest_language');
 
     function fmt(d) { if (!d) return ''; var p = d.split('-'); return p[2] + '/' + p[1]; }
 
@@ -82,18 +84,20 @@ _FORM_JS = """
         o.dataset.arrival = r.arrival;
         o.dataset.departure = r.departure;
         o.dataset.name = r.name;
+        o.dataset.lang = r.lang || '';
         resSel.appendChild(o);
       });
     });
 
     resSel.addEventListener('change', function () {
       var o = resSel.options[resSel.selectedIndex];
-      if (!o || !o.value) { startI.value = ''; endI.value = ''; guest.value = ''; return; }
+      if (!o || !o.value) { startI.value = ''; endI.value = ''; guest.value = ''; langI.value = ''; return; }
       // Dates come from the reservation; the hours keep their defaults (14 / 12),
       // so an early check-in is just a change of the start hour.
       startI.value = o.dataset.arrival;
       endI.value = o.dataset.departure;
       guest.value = o.dataset.name || '';
+      langI.value = o.dataset.lang || '';
     });
   })();
 </script>
@@ -142,6 +146,7 @@ def _form_page(
       </select>
       {note_html}
       <input type="hidden" id="guest_name" name="guest_name" value="" />
+      <input type="hidden" id="guest_language" name="guest_language" value="" />
       <label for="start_date">Valid from</label>
       <div class="dt-row">
         <input id="start_date" type="date" name="start_date" required />
@@ -158,8 +163,7 @@ def _form_page(
       </div>
       <p class="hint">Date fills in from the reservation — for an early check-in
          just change the start hour. Defaults: from 14:00 → until 12:00.</p>
-      <button type="submit" name="action" value="create_send">Create &amp; send to guest</button>
-      <button type="submit" name="action" value="create" class="secondary">Create only</button>
+      <button type="submit">Create code</button>
     </form>
     {js}
     <p class="links"><a href="/door-codes">Ad-hoc code</a> · <a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
@@ -171,22 +175,31 @@ def _fmt_dt(iso: str) -> str:
     return datetime.strptime(iso[:16], "%Y-%m-%dT%H:%M").strftime("%d/%m/%Y %H:%M")
 
 
-def _compose_message(code: str, starts_at: str, ends_at: str) -> str:
-    """Bilingual FR/EN message: the code, its validity, and that it replaces the
-    automatically-sent one. Sent verbatim — Beds24 does not resolve placeholders."""
+def _compose_message(code: str, starts_at: str, ends_at: str, language: str = "") -> str:
+    """The pre-filled message: the code, its validity, and that it replaces the
+    automatically-sent one. French when the guest's language is French, English
+    otherwise. Sent verbatim — Beds24 does not resolve placeholders."""
     s, e = _fmt_dt(starts_at), _fmt_dt(ends_at)
+    if language.strip().lower().startswith("fr"):
+        return (
+            "Bonjour,\n\n"
+            f"Voici votre code d'accès pour votre arrivée : {code}\n"
+            f"Il est valable du {s} au {e}.\n"
+            "Merci d'utiliser ce code plutôt que celui qui vous sera (ou vous a été) "
+            "envoyé automatiquement pour votre séjour.\n\n"
+            "Bonne arrivée !"
+        )
     return (
-        "Bonjour,\n\n"
-        f"Voici votre code d'accès pour votre arrivée : {code}\n"
-        f"Il est valable du {s} au {e}.\n"
-        "Merci d'utiliser ce code plutôt que celui qui vous sera (ou vous a été) "
-        "envoyé automatiquement pour votre séjour.\n\n"
-        "———\n\n"
         "Hello,\n\n"
         f"Here is your access code for your arrival: {code}\n"
         f"It is valid from {s} to {e}.\n"
-        "Please use this code instead of the one sent to you automatically for your stay."
+        "Please use this code instead of the one sent to you automatically for your stay.\n\n"
+        "Safe travels!"
     )
+
+
+def _lang_label(language: str) -> str:
+    return "French" if language.strip().lower().startswith("fr") else "English"
 
 
 async def _render_form(request: Request, *, error: str = "") -> HTMLResponse:
@@ -215,11 +228,13 @@ async def early_checkin_form(request: Request):
 
 @router.post("/early-checkin", response_class=HTMLResponse)
 async def create_early_checkin(request: Request):
+    """Create the code, then show it with a pre-filled, editable message and a
+    Send button (the send itself is POST /early-checkin/send)."""
     form = await request.form()
-    action = str(form.get("action", "")).strip()
     property_name = str(form.get("property_name", "")).strip()
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
+    guest_language = str(form.get("guest_language", "")).strip()
     # The form submits date + hour separately (hour is the field the owner nudges
     # for an early check-in); recombine into the "YYYY-MM-DDTHH:MM" the rounding
     # helpers expect.
@@ -270,26 +285,10 @@ async def create_early_checkin(request: Request):
         log.error("Early-checkin code creation failed: %s", exc)
         return await _render_form(request, error=f"Code creation failed: {exc}")
 
-    sent = False
-    send_error = ""
-    if action == "create_send":
-        gateway = getattr(request.app.state, "booking_gateway", None)
-        if gateway is None:
-            send_error = "Beds24 is not configured — the code was created but not sent."
-        else:
-            try:
-                await gateway.send_guest_message(
-                    booking_id, _compose_message(door_code.code, starts_at, ends_at)
-                )
-                sent = True
-            except BookingGatewayError as exc:
-                log.error("Sending early-checkin code failed: %s", exc)
-                send_error = f"The code was created, but sending failed: {exc}"
-
     log.info(
-        "Early-checkin code created booking=%s window=%s→%s sent=%s",
-        booking_id, starts_at, ends_at, sent,
+        "Early-checkin code created booking=%s window=%s→%s", booking_id, starts_at, ends_at
     )
+    message = _compose_message(door_code.code, starts_at, ends_at, guest_language)
     return HTMLResponse(
         _result_page(
             code=door_code.code,
@@ -297,10 +296,64 @@ async def create_early_checkin(request: Request):
             property_name=property_name,
             starts_at=starts_at,
             ends_at=ends_at,
-            sent=sent,
-            send_error=send_error,
+            booking_id=booking_id,
+            message=message,
+            language=guest_language,
         )
     )
+
+
+@router.post("/early-checkin/send", response_class=HTMLResponse)
+async def send_early_checkin(request: Request):
+    """Send the (possibly edited) message to the guest on their booking."""
+    form = await request.form()
+    reservation_id_raw = str(form.get("reservation_id", "")).strip()
+    guest_name = str(form.get("guest_name", "")).strip()
+    message = str(form.get("message", "")).strip()
+
+    try:
+        booking_id = int(reservation_id_raw)
+    except ValueError:
+        return HTMLResponse(_sent_error_page("Missing reservation — go back and create the code again."))
+    if not message:
+        return HTMLResponse(
+            _send_result_page(booking_id, guest_name, message, error="The message is empty.")
+        )
+
+    gateway = getattr(request.app.state, "booking_gateway", None)
+    if gateway is None:
+        return HTMLResponse(
+            _send_result_page(booking_id, guest_name, message,
+                              error="Beds24 is not configured — cannot send.")
+        )
+    try:
+        await gateway.send_guest_message(booking_id, message)
+    except BookingGatewayError as exc:
+        log.error("Sending early-checkin message failed: %s", exc)
+        return HTMLResponse(
+            _send_result_page(booking_id, guest_name, message,
+                              error=f"Sending failed: {exc}")
+        )
+
+    log.info("Early-checkin message sent on booking %s (%d chars)", booking_id, len(message))
+    content = f"""{brand(logo="📨", heading="Sent")}
+    <p class="success" style="text-align:center">Message sent to
+      <strong>{html.escape(guest_name or 'the guest')}</strong> ✓</p>
+    <p class="links"><a href="/early-checkin">Another guest</a> · <a href="/door-codes">Ad-hoc code</a></p>"""
+    return HTMLResponse(page(title="Early check-in — sent", content=content))
+
+
+def _send_form(booking_id: int, guest_name: str, message: str, language: str, error: str = "") -> str:
+    """The editable message + Send button (reused on the result and on send failure)."""
+    error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
+    return f"""{error_html}
+    <form method="post" action="/early-checkin/send">
+      <input type="hidden" name="reservation_id" value="{booking_id}" />
+      <input type="hidden" name="guest_name" value="{html.escape(guest_name)}" />
+      <label for="message">Message to {html.escape(guest_name or 'the guest')} ({_lang_label(language)})</label>
+      <textarea id="message" name="message" rows="9">{html.escape(message)}</textarea>
+      <button type="submit">Send to guest</button>
+    </form>"""
 
 
 def _result_page(
@@ -310,26 +363,32 @@ def _result_page(
     property_name: str,
     starts_at: str,
     ends_at: str,
-    sent: bool,
-    send_error: str,
+    booking_id: int,
+    message: str,
+    language: str,
 ) -> str:
-    if sent:
-        status = (
-            f'<p class="success" style="text-align:left">Sent to '
-            f"<strong>{html.escape(guest_name or 'the guest')}</strong> ✓</p>"
-        )
-    elif send_error:
-        status = f'<p class="error">{html.escape(send_error)}</p>'
-    else:
-        status = ""
-
     content = f"""{brand(logo="✅", heading="Code created")}
     {code_result(code)}
-    {status}
     <p class="meta">
       {f"For: <strong>{html.escape(guest_name)}</strong><br>" if guest_name else ""}
       {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
       Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
     </p>
+    {_send_form(booking_id, guest_name, message, language)}
     <p class="links"><a href="/early-checkin">Another guest</a> · <a href="/door-codes">Ad-hoc code</a></p>"""
-    return page(title="Early check-in — code created", content=content)
+    return page(title="Early check-in — code created", content=content, max_width="460px")
+
+
+def _send_result_page(booking_id: int, guest_name: str, message: str, *, error: str) -> str:
+    """Shown when a send fails — keep the editable message so the owner can retry."""
+    content = f"""{brand(logo="✉️", heading="Send the code")}
+    {_send_form(booking_id, guest_name, message, "", error=error)}
+    <p class="links"><a href="/early-checkin">Start over</a></p>"""
+    return page(title="Early check-in — send", content=content, max_width="460px")
+
+
+def _sent_error_page(msg: str) -> str:
+    content = f"""{brand(logo="⚠️", heading="Couldn't send")}
+    <p class="error">{html.escape(msg)}</p>
+    <p class="links"><a href="/early-checkin">Back to early check-in</a></p>"""
+    return page(title="Early check-in — error", content=content)

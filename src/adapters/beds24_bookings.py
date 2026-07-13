@@ -76,6 +76,7 @@ class Beds24BookingGateway(GuestBookingGateway):
                     departure=b.get("departure", "") or "",
                     channel=(b.get("channel") or b.get("referer") or "").strip(),
                     status=b.get("status", "") or "",
+                    language=(b.get("lang") or "").strip().lower(),
                 )
             )
         out.sort(key=lambda r: r.arrival)
