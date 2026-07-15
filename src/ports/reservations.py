@@ -20,6 +20,8 @@ class Reservation:
     channel: str = "" # e.g. "airbnb", "booking", "direct" — for display
     status: str = ""
     language: str = ""  # guest's preferred language code, e.g. "fr" / "en"
+    source: str = "beds24"  # which PMS owns this booking — routes the message send
+                            # back to the right gateway ("beds24" / "smoobu")
 
 
 class BookingGatewayError(Exception):
@@ -41,3 +43,9 @@ class GuestBookingGateway(ABC):
         verbatim (no placeholder resolution). Raises BookingGatewayError on failure.
         """
         ...
+
+    def managed_properties(self) -> list[tuple[str, int]]:
+        """(display name, property id) pairs this gateway contributes to the
+        property dropdown, for units not in the Beds24 YAML map. The id must match
+        the `property_id` on this gateway's reservations. Empty by default."""
+        return []

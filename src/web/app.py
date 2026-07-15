@@ -82,6 +82,22 @@ def create_app() -> FastAPI:
             refresh_token=os.environ.get("BEDS24_REFRESH_TOKEN", "").strip(),
         )
 
+    # Smoobu gateway adds L'Hippocrate (not in Beds24) to the /early-checkin form.
+    # The single API key both reads reservations and sends guest messages. Absent
+    # key → the form simply doesn't list Hippocrate.
+    smoobu_gateway = None
+    smoobu_api_key = os.environ.get("SMOOBU_API_KEY", "").strip()
+    smoobu_apartment_id = os.environ.get("SMOOBU_APARTMENT_ID", "").strip()
+    if smoobu_api_key and smoobu_apartment_id:
+        from src.adapters.smoobu_bookings import SmoobuBookingGateway
+
+        smoobu_gateway = SmoobuBookingGateway(
+            api_key=smoobu_api_key,
+            apartment_id=int(smoobu_apartment_id),
+            apartment_name=os.environ.get("SMOOBU_APARTMENT_NAME", "Hippocrate").strip()
+            or "Hippocrate",
+        )
+
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)
 
     application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
@@ -90,6 +106,7 @@ def create_app() -> FastAPI:
     application.state.agent = agent
     application.state.door_lock = door_lock
     application.state.booking_gateway = booking_gateway
+    application.state.smoobu_gateway = smoobu_gateway
 
     application.add_middleware(AuthMiddleware, review_token=review_token)
     application.include_router(auth_router)

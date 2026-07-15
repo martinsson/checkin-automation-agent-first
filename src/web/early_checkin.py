@@ -19,7 +19,11 @@ from fastapi.responses import HTMLResponse
 from src.config.device_map import load_device_map
 from src.config.property_map import load_property_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
-from src.ports.reservations import BookingGatewayError, Reservation
+from src.ports.reservations import (
+    BookingGatewayError,
+    GuestBookingGateway,
+    Reservation,
+)
 from src.web.door_codes import _clamp_start, _round_to_hours
 from src.web.layout import brand, code_result, page
 
@@ -43,6 +47,7 @@ def _reservations_json(reservations: list[Reservation]) -> str:
                 "departure": r.departure,
                 "channel": r.channel,
                 "lang": r.language,
+                "source": r.source,
             }
         )
     return json.dumps(grouped)
@@ -61,6 +66,7 @@ _FORM_JS = """
     var startI = document.getElementById('start_date');
     var endI = document.getElementById('end_date');
     var langI = document.getElementById('guest_language');
+    var srcI = document.getElementById('source');
 
     function fmt(d) { if (!d) return ''; var p = d.split('-'); return p[2] + '/' + p[1]; }
 
@@ -69,7 +75,7 @@ _FORM_JS = """
       var pid = opt ? opt.getAttribute('data-pid') : '';
       var list = RES[pid] || [];
       resSel.innerHTML = '';
-      startI.value = ''; endI.value = ''; guest.value = '';
+      startI.value = ''; endI.value = ''; guest.value = ''; srcI.value = '';
       if (!list.length) {
         resSel.appendChild(new Option('No upcoming reservations', ''));
         resSel.disabled = true;
@@ -85,19 +91,21 @@ _FORM_JS = """
         o.dataset.departure = r.departure;
         o.dataset.name = r.name;
         o.dataset.lang = r.lang || '';
+        o.dataset.source = r.source || '';
         resSel.appendChild(o);
       });
     });
 
     resSel.addEventListener('change', function () {
       var o = resSel.options[resSel.selectedIndex];
-      if (!o || !o.value) { startI.value = ''; endI.value = ''; guest.value = ''; langI.value = ''; return; }
+      if (!o || !o.value) { startI.value = ''; endI.value = ''; guest.value = ''; langI.value = ''; srcI.value = ''; return; }
       // Dates come from the reservation; the hours keep their defaults (14 / 12),
       // so an early check-in is just a change of the start hour.
       startI.value = o.dataset.arrival;
       endI.value = o.dataset.departure;
       guest.value = o.dataset.name || '';
       langI.value = o.dataset.lang || '';
+      srcI.value = o.dataset.source || '';
     });
   })();
 </script>
@@ -117,15 +125,21 @@ def _form_page(
     reservations: list[Reservation],
     error: str = "",
     note: str = "",
+    extra_properties: list[tuple[str, int]] | None = None,
 ) -> str:
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
     note_html = f'<p class="hint">{html.escape(note)}</p>' if note else ""
 
     pm = load_property_map()
+    # Beds24 properties (from the YAML map) plus any non-Beds24 units contributed
+    # by another gateway (e.g. Hippocrate from Smoobu). data-pid MUST equal the
+    # property_id on that unit's reservations so the client-side filter matches.
+    props: list[tuple[str, int | None]] = [(n, pm.id_for(n)) for n in pm.property_names]
+    props.extend(extra_properties or [])
     options = ['<option value="">— Select property —</option>']
-    for name in pm.property_names:
+    for name, pid in props:
         options.append(
-            f'<option value="{html.escape(name)}" data-pid="{pm.id_for(name)}">'
+            f'<option value="{html.escape(name)}" data-pid="{pid}">'
             f"{html.escape(name)}</option>"
         )
     property_options = "\n".join(options)
@@ -147,6 +161,7 @@ def _form_page(
       {note_html}
       <input type="hidden" id="guest_name" name="guest_name" value="" />
       <input type="hidden" id="guest_language" name="guest_language" value="" />
+      <input type="hidden" id="source" name="source" value="" />
       <label for="start_date">Valid from</label>
       <div class="dt-row">
         <input id="start_date" type="date" name="start_date" required />
@@ -202,21 +217,42 @@ def _lang_label(language: str) -> str:
     return "French" if language.strip().lower().startswith("fr") else "English"
 
 
+def _gateways(request: Request) -> dict[str, GuestBookingGateway]:
+    """source → configured booking gateway. Beds24 powers the six Beds24 flats;
+    Smoobu (if configured) adds L'Hippocrate."""
+    out: dict[str, GuestBookingGateway] = {}
+    beds24 = getattr(request.app.state, "booking_gateway", None)
+    if beds24 is not None:
+        out["beds24"] = beds24
+    smoobu = getattr(request.app.state, "smoobu_gateway", None)
+    if smoobu is not None:
+        out["smoobu"] = smoobu
+    return out
+
+
 async def _render_form(request: Request, *, error: str = "") -> HTMLResponse:
-    """Render the form, (re)loading upcoming reservations from the gateway."""
-    gateway = getattr(request.app.state, "booking_gateway", None)
+    """Render the form, (re)loading upcoming reservations from every gateway."""
+    gateways = _gateways(request)
     reservations: list[Reservation] = []
-    note = ""
-    if gateway is None:
-        note = "Reservations unavailable — Beds24 is not configured on this server."
-    else:
+    extra_properties: list[tuple[str, int]] = []
+    notes: list[str] = []
+    if not gateways:
+        notes.append("Reservations unavailable — no booking backend is configured on this server.")
+    for source, gateway in gateways.items():
         try:
-            reservations = await gateway.upcoming_arrivals(_LOOKAHEAD_DAYS)
+            reservations.extend(await gateway.upcoming_arrivals(_LOOKAHEAD_DAYS))
         except BookingGatewayError as exc:
-            log.error("Loading reservations failed: %s", exc)
-            note = f"Could not load reservations: {exc}"
+            log.error("Loading %s reservations failed: %s", source, exc)
+            notes.append(f"Could not load {source} reservations: {exc}")
+        # Non-Beds24 units aren't in the YAML property map — add them to the dropdown.
+        extra_properties.extend(gateway.managed_properties())
     return HTMLResponse(
-        _form_page(reservations=reservations, error=error, note=note),
+        _form_page(
+            reservations=reservations,
+            error=error,
+            note=" ".join(notes),
+            extra_properties=extra_properties,
+        ),
         status_code=400 if error else 200,
     )
 
@@ -235,6 +271,7 @@ async def create_early_checkin(request: Request):
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
     guest_language = str(form.get("guest_language", "")).strip()
+    source = str(form.get("source", "")).strip() or "beds24"
     # The form submits date + hour separately (hour is the field the owner nudges
     # for an early check-in); recombine into the "YYYY-MM-DDTHH:MM" the rounding
     # helpers expect.
@@ -299,6 +336,7 @@ async def create_early_checkin(request: Request):
             booking_id=booking_id,
             message=message,
             language=guest_language,
+            source=source,
         )
     )
 
@@ -310,6 +348,7 @@ async def send_early_checkin(request: Request):
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
     message = str(form.get("message", "")).strip()
+    source = str(form.get("source", "")).strip() or "beds24"
 
     try:
         booking_id = int(reservation_id_raw)
@@ -317,21 +356,22 @@ async def send_early_checkin(request: Request):
         return HTMLResponse(_sent_error_page("Missing reservation — go back and create the code again."))
     if not message:
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message, error="The message is empty.")
+            _send_result_page(booking_id, guest_name, message, source, error="The message is empty.")
         )
 
-    gateway = getattr(request.app.state, "booking_gateway", None)
+    # Route the send back to the PMS the booking came from (Beds24 / Smoobu).
+    gateway = _gateways(request).get(source)
     if gateway is None:
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message,
-                              error="Beds24 is not configured — cannot send.")
+            _send_result_page(booking_id, guest_name, message, source,
+                              error=f"The {source} backend is not configured — cannot send.")
         )
     try:
         await gateway.send_guest_message(booking_id, message)
     except BookingGatewayError as exc:
         log.error("Sending early-checkin message failed: %s", exc)
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message,
+            _send_result_page(booking_id, guest_name, message, source,
                               error=f"Sending failed: {exc}")
         )
 
@@ -343,13 +383,14 @@ async def send_early_checkin(request: Request):
     return HTMLResponse(page(title="Early check-in — sent", content=content))
 
 
-def _send_form(booking_id: int, guest_name: str, message: str, language: str, error: str = "") -> str:
+def _send_form(booking_id: int, guest_name: str, message: str, language: str, source: str, error: str = "") -> str:
     """The editable message + Send button (reused on the result and on send failure)."""
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
     return f"""{error_html}
     <form method="post" action="/early-checkin/send">
       <input type="hidden" name="reservation_id" value="{booking_id}" />
       <input type="hidden" name="guest_name" value="{html.escape(guest_name)}" />
+      <input type="hidden" name="source" value="{html.escape(source)}" />
       <label for="message">Message to {html.escape(guest_name or 'the guest')} ({_lang_label(language)})</label>
       <textarea id="message" name="message" rows="9">{html.escape(message)}</textarea>
       <button type="submit">Send to guest</button>
@@ -366,6 +407,7 @@ def _result_page(
     booking_id: int,
     message: str,
     language: str,
+    source: str,
 ) -> str:
     content = f"""{brand(logo="✅", heading="Code created")}
     {code_result(code)}
@@ -374,15 +416,15 @@ def _result_page(
       {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
       Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
     </p>
-    {_send_form(booking_id, guest_name, message, language)}
+    {_send_form(booking_id, guest_name, message, language, source)}
     <p class="links"><a href="/early-checkin">Another guest</a> · <a href="/door-codes">Ad-hoc code</a></p>"""
     return page(title="Early check-in — code created", content=content, max_width="460px")
 
 
-def _send_result_page(booking_id: int, guest_name: str, message: str, *, error: str) -> str:
+def _send_result_page(booking_id: int, guest_name: str, message: str, source: str, *, error: str) -> str:
     """Shown when a send fails — keep the editable message so the owner can retry."""
     content = f"""{brand(logo="✉️", heading="Send the code")}
-    {_send_form(booking_id, guest_name, message, "", error=error)}
+    {_send_form(booking_id, guest_name, message, "", source, error=error)}
     <p class="links"><a href="/early-checkin">Start over</a></p>"""
     return page(title="Early check-in — send", content=content, max_width="460px")
 

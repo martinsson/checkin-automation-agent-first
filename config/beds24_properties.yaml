@@ -6,7 +6,9 @@
 # when the code is created.
 #
 # ids sourced from the Beds24 property table (see CLAUDE.md). Hippocrate is not
-# in Beds24, so it is intentionally absent here.
+# in Beds24, so it is intentionally absent here — it is contributed to the
+# /early-checkin dropdown by the Smoobu gateway instead (its Smoobu apartment id
+# is SMOOBU_APARTMENT_ID; see src/adapters/smoobu_bookings.py).
 
 properties:
   "Velours T2": 318188
