@@ -14,6 +14,7 @@ from datetime import date, timedelta
 import httpx
 
 from src.ports.reservations import (
+    SOURCE_BEDS24,
     BookingGatewayError,
     GuestBookingGateway,
     Reservation,
@@ -77,6 +78,7 @@ class Beds24BookingGateway(GuestBookingGateway):
                     channel=(b.get("channel") or b.get("referer") or "").strip(),
                     status=b.get("status", "") or "",
                     language=(b.get("lang") or "").strip().lower(),
+                    source=SOURCE_BEDS24,
                 )
             )
         out.sort(key=lambda r: r.arrival)

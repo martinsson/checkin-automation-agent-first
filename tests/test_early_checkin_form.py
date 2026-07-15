@@ -28,6 +28,14 @@ class FakeBookingGateway(GuestBookingGateway):
         self.sent.append((booking_id, message))
 
 
+class FakeSmoobuGateway(FakeBookingGateway):
+    """A second gateway standing in for Smoobu — contributes Hippocrate to the
+    dropdown and tags its reservations source='smoobu'."""
+
+    def managed_properties(self):
+        return [("Hippocrate", 3230512)]
+
+
 def _sim_pin(n: int, reservation_id: int) -> str:
     """The deterministic PIN SimulatorDoorLockGateway returns for the n-th code."""
     return f"{1000 + n:04d}{(reservation_id or 0) % 10000:04d}"
@@ -59,7 +67,7 @@ _CREATE = {
 }
 
 
-def _make_client(door_lock=None, gateway=None):
+def _make_client(door_lock=None, gateway=None, smoobu_gateway=None):
     os.environ.setdefault("REVIEW_TOKEN", "test-token")
     os.environ.setdefault("DB_PATH", ":memory:")
     os.environ.setdefault("SMTP_HOST", "localhost")
@@ -72,6 +80,9 @@ def _make_client(door_lock=None, gateway=None):
     app = create_app()
     app.state.door_lock = door_lock or SimulatorDoorLockGateway()
     app.state.booking_gateway = gateway if gateway is not None else FakeBookingGateway(_RES)
+    # create_app() loads .env, which may carry a real SMOOBU_API_KEY — pin the
+    # Smoobu gateway explicitly so tests never touch the live Smoobu API.
+    app.state.smoobu_gateway = smoobu_gateway
     client = TestClient(app)
     client.cookies.set("session", "test-token")
     return client, app.state.door_lock, app.state.booking_gateway
@@ -151,3 +162,64 @@ def test_compose_message_english_otherwise():
         msg = _compose_message("12345678", "2026-08-03T14:00:00", "2026-08-10T12:00:00", lang)
         assert "Hello" in msg and "instead of" in msg
         assert "Bonjour" not in msg  # English only
+
+
+# --- Smoobu / Hippocrate (a second, non-Beds24 gateway) ---------------------
+
+_HIPPO_RES = [
+    Reservation(
+        booking_id=139632572,
+        property_id=3230512,
+        guest_name="Marine Cuenot",
+        arrival="2026-07-16",
+        departure="2026-07-19",
+        channel="Airbnb",
+        status="",
+        language="fr",
+        source="smoobu",
+    )
+]
+
+
+def test_form_lists_hippocrate_from_smoobu_alongside_beds24():
+    client, _, _ = _make_client(smoobu_gateway=FakeSmoobuGateway(_HIPPO_RES))
+    resp = client.get("/early-checkin")
+    assert resp.status_code == 200
+    # Beds24 property still there…
+    assert 'data-pid="326275"' in resp.text and "La Palma" in resp.text
+    # …and Hippocrate now appears with its Smoobu apartment id, and its guest +
+    # source are embedded for the client-side dropdown.
+    assert 'data-pid="3230512"' in resp.text and "Hippocrate" in resp.text
+    assert "Marine Cuenot" in resp.text and '"source": "smoobu"' in resp.text
+
+
+def test_send_routes_to_the_smoobu_gateway_for_a_smoobu_booking():
+    beds24 = FakeBookingGateway(_RES)
+    smoobu = FakeSmoobuGateway(_HIPPO_RES)
+    client, _, _ = _make_client(gateway=beds24, smoobu_gateway=smoobu)
+    msg = "Bonjour Marine, voici votre code : 12345678."
+    resp = client.post(
+        "/early-checkin/send",
+        data={
+            "reservation_id": "139632572",
+            "guest_name": "Marine Cuenot",
+            "message": msg,
+            "source": "smoobu",
+        },
+    )
+    assert resp.status_code == 200 and "Sent" in resp.text
+    assert smoobu.sent == [(139632572, msg)]  # routed to Smoobu…
+    assert beds24.sent == []                   # …not Beds24
+
+
+def test_send_defaults_to_beds24_when_source_absent():
+    """Existing Beds24 sends carry no explicit source — they must still work."""
+    beds24 = FakeBookingGateway(_RES)
+    smoobu = FakeSmoobuGateway(_HIPPO_RES)
+    client, _, _ = _make_client(gateway=beds24, smoobu_gateway=smoobu)
+    resp = client.post(
+        "/early-checkin/send",
+        data={"reservation_id": "99001", "guest_name": "Alice Martin", "message": "hi"},
+    )
+    assert resp.status_code == 200 and "Sent" in resp.text
+    assert beds24.sent == [(99001, "hi")] and smoobu.sent == []
