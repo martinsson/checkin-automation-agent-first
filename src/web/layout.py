@@ -51,6 +51,15 @@ input, select, textarea {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 textarea { font-family: inherit; line-height: 1.45; resize: vertical; }
+/* iOS Safari gives native date/time controls an intrinsic min-width that
+   ignores width:100% and lets them overflow the card — force them to shrink
+   to fit the container instead. */
+input[type="date"], input[type="time"], input[type="datetime-local"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+}
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: #2d6a4f;
