@@ -19,6 +19,10 @@ name: Deploy
 #                        /early-checkin form (list a property's upcoming reservations).
 #   BEDS24_REFRESH_TOKEN       — Beds24 refresh token; mints a write token so
 #                        /early-checkin can send the guest their access code.
+#   SMOOBU_API_KEY             — Smoobu API key; adds L'Hippocrate (Smoobu-managed,
+#                        not in Beds24) to the /early-checkin form.
+#   SMOOBU_APARTMENT_ID        — Smoobu apartment id for L'Hippocrate (3230512).
+#                        NB: 3052591 is Le Matisse's Smoobu listing — not this.
 #
 # The .env file itself is never rsynced by this workflow (same as `make deploy` —
 # it lives only on the server; see the Makefile header for first-time setup).
@@ -77,6 +81,8 @@ jobs:
           MAKE_IGLOOHOME_API_KEY: ${{ secrets.MAKE_IGLOOHOME_API_KEY }}
           BEDS24_READ_ALL_TOKEN: ${{ secrets.BEDS24_READ_ALL_TOKEN }}
           BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
+          SMOOBU_API_KEY: ${{ secrets.SMOOBU_API_KEY }}
+          SMOOBU_APARTMENT_ID: ${{ secrets.SMOOBU_APARTMENT_ID }}
         run: |
           set -euo pipefail
           # Must match REMOTE_DIR in the Makefile.
@@ -105,6 +111,8 @@ jobs:
           upsert MAKE_IGLOOHOME_API_KEY "${MAKE_IGLOOHOME_API_KEY:-}"
           upsert BEDS24_READ_ALL_TOKEN "${BEDS24_READ_ALL_TOKEN:-}"
           upsert BEDS24_REFRESH_TOKEN "${BEDS24_REFRESH_TOKEN:-}"
+          upsert SMOOBU_API_KEY "${SMOOBU_API_KEY:-}"
+          upsert SMOOBU_APARTMENT_ID "${SMOOBU_APARTMENT_ID:-}"
 
       - name: Deploy
         run: make deploy SERVER=deploy-target
