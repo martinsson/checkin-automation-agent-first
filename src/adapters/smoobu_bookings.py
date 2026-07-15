@@ -58,11 +58,10 @@ class SmoobuBookingGateway(GuestBookingGateway):
 
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         today = date.today()
-        end = today + timedelta(days=days)
         params = {
             "apartmentId": self._apartment_id,
             "arrivalFrom": today.isoformat(),
-            "arrivalTo": end.isoformat(),
+            "arrivalTo": (today + timedelta(days=days)).isoformat(),
             "showCancellation": "false",
             "pageSize": 100,
         }
@@ -85,10 +84,6 @@ class SmoobuBookingGateway(GuestBookingGateway):
             if b.get("is-blocked-booking") or b.get("type") == "block":
                 continue
             arrival = (b.get("arrival") or "").strip()
-            # Belt-and-braces: keep only arrivals inside [today, today+days] in case
-            # the API's arrivalFrom/arrivalTo filter is looser than expected.
-            if not arrival or arrival < today.isoformat() or arrival > end.isoformat():
-                continue
             name = (b.get("guest-name") or "").strip() or (
                 f"{b.get('firstname', '') or ''} {b.get('lastname', '') or ''}".strip()
             )

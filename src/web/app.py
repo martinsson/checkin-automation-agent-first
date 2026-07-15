@@ -94,8 +94,6 @@ def create_app() -> FastAPI:
         smoobu_gateway = SmoobuBookingGateway(
             api_key=smoobu_api_key,
             apartment_id=int(smoobu_apartment_id),
-            apartment_name=os.environ.get("SMOOBU_APARTMENT_NAME", "Hippocrate").strip()
-            or "Hippocrate",
         )
 
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)

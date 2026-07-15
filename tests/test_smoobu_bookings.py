@@ -8,6 +8,7 @@ and a `language` code; a successful send answers HTTP 201.
 """
 
 import asyncio
+import functools
 import json
 
 import httpx
@@ -51,13 +52,9 @@ _RESERVATIONS_BODY = {
 def _install_transport(monkeypatch, handler) -> None:
     """Make every httpx.AsyncClient the adapter opens route through `handler`."""
     transport = httpx.MockTransport(handler)
-    real_init = httpx.AsyncClient.__init__
-
-    def init(self, *args, **kwargs):
-        kwargs["transport"] = transport
-        real_init(self, *args, **kwargs)
-
-    monkeypatch.setattr(httpx.AsyncClient, "__init__", init)
+    monkeypatch.setattr(
+        httpx, "AsyncClient", functools.partial(httpx.AsyncClient, transport=transport)
+    )
 
 
 def test_upcoming_arrivals_parses_and_skips_blocks(monkeypatch):
