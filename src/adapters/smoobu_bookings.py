@@ -16,6 +16,7 @@ from datetime import date, timedelta
 import httpx
 
 from src.ports.reservations import (
+    SOURCE_SMOOBU,
     BookingGatewayError,
     GuestBookingGateway,
     Reservation,
@@ -26,8 +27,6 @@ log = logging.getLogger(__name__)
 _BASE = "https://login.smoobu.com/api"
 # Smoobu's WAF blocks the default httpx User-Agent; send a normal-looking one.
 _UA = "Mozilla/5.0 (checkin-automation)"
-
-SOURCE = "smoobu"
 
 
 class SmoobuBookingGateway(GuestBookingGateway):
@@ -99,7 +98,7 @@ class SmoobuBookingGateway(GuestBookingGateway):
                     channel=str(channel_name or "").strip(),
                     status=str(b.get("status") or "").strip(),
                     language=str(b.get("language") or "").strip().lower(),
-                    source=SOURCE,
+                    source=SOURCE_SMOOBU,
                 )
             )
         out.sort(key=lambda r: r.arrival)

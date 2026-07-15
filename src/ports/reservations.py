@@ -8,6 +8,13 @@ Backed in production by Beds24 (src/adapters/beds24_bookings.py).
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+# Booking sources. A source is both a Reservation.source value AND the key under
+# which the matching gateway is registered (see src/web/early_checkin.py), so a
+# guest message routes back to the PMS the booking came from. Keep these two uses
+# in lockstep — a mismatch silently sends to the wrong (or no) backend.
+SOURCE_BEDS24 = "beds24"
+SOURCE_SMOOBU = "smoobu"
+
 
 @dataclass
 class Reservation:
@@ -20,8 +27,7 @@ class Reservation:
     channel: str = "" # e.g. "airbnb", "booking", "direct" — for display
     status: str = ""
     language: str = ""  # guest's preferred language code, e.g. "fr" / "en"
-    source: str = "beds24"  # which PMS owns this booking — routes the message send
-                            # back to the right gateway ("beds24" / "smoobu")
+    source: str = SOURCE_BEDS24  # which PMS owns this booking — routes the message send
 
 
 class BookingGatewayError(Exception):

@@ -20,6 +20,8 @@ from src.config.device_map import load_device_map
 from src.config.property_map import load_property_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
 from src.ports.reservations import (
+    SOURCE_BEDS24,
+    SOURCE_SMOOBU,
     BookingGatewayError,
     GuestBookingGateway,
     Reservation,
@@ -223,10 +225,10 @@ def _gateways(request: Request) -> dict[str, GuestBookingGateway]:
     out: dict[str, GuestBookingGateway] = {}
     beds24 = getattr(request.app.state, "booking_gateway", None)
     if beds24 is not None:
-        out["beds24"] = beds24
+        out[SOURCE_BEDS24] = beds24
     smoobu = getattr(request.app.state, "smoobu_gateway", None)
     if smoobu is not None:
-        out["smoobu"] = smoobu
+        out[SOURCE_SMOOBU] = smoobu
     return out
 
 
@@ -271,7 +273,7 @@ async def create_early_checkin(request: Request):
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
     guest_language = str(form.get("guest_language", "")).strip()
-    source = str(form.get("source", "")).strip() or "beds24"
+    source = str(form.get("source", "")).strip() or SOURCE_BEDS24
     # The form submits date + hour separately (hour is the field the owner nudges
     # for an early check-in); recombine into the "YYYY-MM-DDTHH:MM" the rounding
     # helpers expect.
@@ -348,7 +350,7 @@ async def send_early_checkin(request: Request):
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
     message = str(form.get("message", "")).strip()
-    source = str(form.get("source", "")).strip() or "beds24"
+    source = str(form.get("source", "")).strip() or SOURCE_BEDS24
 
     try:
         booking_id = int(reservation_id_raw)
