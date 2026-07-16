@@ -106,3 +106,25 @@ def test_send_guest_message_raises_on_http_error(monkeypatch):
 def test_managed_properties_reports_the_apartment():
     gw = SmoobuBookingGateway(api_key="k", apartment_id=APT_ID, apartment_name="Hippocrate")
     assert gw.managed_properties() == [("Hippocrate", APT_ID)]
+
+
+def test_stays_overlapping_keeps_blocks_and_filters_by_window(monkeypatch):
+    from datetime import date
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=_RESERVATIONS_BODY)
+
+    _install_transport(monkeypatch, handler)
+    gw = SmoobuBookingGateway(api_key="k", apartment_id=APT_ID)
+    res = asyncio.run(gw.stays_overlapping(date(2026, 7, 16), date(2026, 7, 26)))
+
+    # Window is translated to arrivalTo = last night, departureFrom = window start.
+    assert seen["params"]["arrivalTo"] == "2026-07-25"
+    assert seen["params"]["departureFrom"] == "2026-07-16"
+    # Unlike upcoming_arrivals, blocks are KEPT (a blocked night is not free).
+    assert len(res) == 2
+    block = next(r for r in res if r.booking_id == 999)
+    assert block.status == "block" and block.guest_name == "Blocked"

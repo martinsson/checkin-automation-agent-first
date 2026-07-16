@@ -25,6 +25,27 @@ log = logging.getLogger(__name__)
 _BASE = "https://api.beds24.com/v2"
 # Bookings that actually hold the room (exclude inquiries / cancellations).
 _LIVE_STATUSES = {"confirmed", "new", "request"}
+# For occupancy, a night is "not free" if a guest holds it OR the owner blocked
+# it — Beds24 stores availability blocks as bookings with status "black".
+_OCCUPYING_STATUSES = _LIVE_STATUSES | {"black"}
+
+
+def _to_reservation(b: dict) -> Reservation:
+    """Map one Beds24 /bookings item to a Reservation."""
+    name = f"{b.get('firstName', '') or ''} {b.get('lastName', '') or ''}".strip()
+    if not name and b.get("status") == "black":
+        name = "Blocked"
+    return Reservation(
+        booking_id=int(b["id"]),
+        property_id=int(b.get("propertyId", 0) or 0),
+        guest_name=name,
+        arrival=b.get("arrival", "") or "",
+        departure=b.get("departure", "") or "",
+        channel=(b.get("channel") or b.get("referer") or "").strip(),
+        status=b.get("status", "") or "",
+        language=(b.get("lang") or "").strip().lower(),
+        source=SOURCE_BEDS24,
+    )
 
 
 class Beds24BookingGateway(GuestBookingGateway):
@@ -63,24 +84,38 @@ class Beds24BookingGateway(GuestBookingGateway):
             )
         data = resp.json().get("data", []) or []
 
-        out: list[Reservation] = []
-        for b in data:
-            if b.get("status") not in _LIVE_STATUSES:
-                continue
-            name = f"{b.get('firstName', '') or ''} {b.get('lastName', '') or ''}".strip()
-            out.append(
-                Reservation(
-                    booking_id=int(b["id"]),
-                    property_id=int(b.get("propertyId", 0) or 0),
-                    guest_name=name,
-                    arrival=b.get("arrival", "") or "",
-                    departure=b.get("departure", "") or "",
-                    channel=(b.get("channel") or b.get("referer") or "").strip(),
-                    status=b.get("status", "") or "",
-                    language=(b.get("lang") or "").strip().lower(),
-                    source=SOURCE_BEDS24,
+        out = [_to_reservation(b) for b in data if b.get("status") in _LIVE_STATUSES]
+        out.sort(key=lambda r: r.arrival)
+        return out
+
+    async def stays_overlapping(self, start: date, end: date) -> list[Reservation]:
+        """Guest bookings and owner blocks that touch any night in [start, end).
+
+        Overlap = arrives before the window ends AND departs after it starts. We
+        ask Beds24 for arrivalTo = last night and departureFrom = window start
+        (its filters are inclusive; over-fetching a touch is harmless because the
+        caller decides occupancy per night)."""
+        last_night = end - timedelta(days=1)
+        params = {
+            "arrivalTo": last_night.isoformat(),
+            "departureFrom": start.isoformat(),
+            "status": list(_OCCUPYING_STATUSES),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{_BASE}/bookings",
+                    params=params,
+                    headers={"token": self._read_token, "accept": "application/json"},
                 )
+        except httpx.HTTPError as exc:
+            raise BookingGatewayError(f"Beds24 bookings request failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise BookingGatewayError(
+                f"Beds24 bookings returned HTTP {resp.status_code}: {resp.text[:200]}"
             )
+        data = resp.json().get("data", []) or []
+        out = [_to_reservation(b) for b in data if b.get("status") in _OCCUPYING_STATUSES]
         out.sort(key=lambda r: r.arrival)
         return out
 
