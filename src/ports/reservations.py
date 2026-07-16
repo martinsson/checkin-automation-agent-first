@@ -7,6 +7,7 @@ Backed in production by Beds24 (src/adapters/beds24_bookings.py).
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import date
 
 # Booking sources. A source is both a Reservation.source value AND the key under
 # which the matching gateway is registered (see src/web/early_checkin.py), so a
@@ -41,6 +42,24 @@ class GuestBookingGateway(ABC):
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         """Reservations arriving from today through today+days (live bookings only)."""
         ...
+
+    async def stays_overlapping(self, start: date, end: date) -> list[Reservation]:
+        """
+        Live stays occupying at least one night in the half-open window
+        [start, end) — i.e. any booking with arrival < end and departure > start,
+        **including stays that began before `start` and are still in progress**
+        (which upcoming_arrivals, filtering by arrival date, would miss).
+
+        Owner-side blocks (Beds24 `black`, Smoobu blocked bookings) are included:
+        a blocked night is not available, so it must not read as free. Callers
+        compute per-night occupancy themselves (arrival ≤ night < departure), so a
+        provider may return slightly wider than the window. This powers the
+        occupancy / free-night view. Raises BookingGatewayError on failure.
+
+        Optional: the default raises NotImplementedError so a gateway that only
+        supports arrival listing (e.g. a test fake) need not implement it.
+        """
+        raise NotImplementedError
 
     @abstractmethod
     async def send_guest_message(self, booking_id: int, message: str) -> None:

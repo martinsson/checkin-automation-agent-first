@@ -82,7 +82,7 @@ async def review_list(request: Request):
 
     content = f"""{brand(logo="📋", heading=t("review.heading"))}
     {body}
-    <p class="links"><a href="/early-checkin">{t("nav.early_checkin")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
+    <p class="links"><a href="/occupancy">{t("nav.free_nights")}</a> · <a href="/early-checkin">{t("nav.early_checkin")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
     return HTMLResponse(page(title=t("review.title"), content=content, max_width="720px", lang=t.lang))
 
 

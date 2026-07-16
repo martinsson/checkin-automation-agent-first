@@ -26,6 +26,7 @@ from src.web.hostbuddy_webhook import router as webhook_router
 from src.web.contact import router as contact_router
 from src.web.door_codes import router as door_codes_router
 from src.web.early_checkin import router as early_checkin_router
+from src.web.occupancy import router as occupancy_router
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     application.include_router(contact_router)
     application.include_router(door_codes_router)
     application.include_router(early_checkin_router)
+    application.include_router(occupancy_router)
 
     log.info("Web UI started. DB: %s", db_path)
     return application

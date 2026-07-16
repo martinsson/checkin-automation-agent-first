@@ -82,6 +82,7 @@ def translator_for(request: Request) -> Translator:
 # key -> {"en": ..., "fr": ...}. Group by page for readability.
 _STRINGS: dict[str, dict[str, str]] = {
     # Shared footer navigation + common bits reused across pages.
+    "nav.free_nights": {"en": "Free nights", "fr": "Nuits libres"},
     "nav.early_checkin": {"en": "Early check-in", "fr": "Arrivée anticipée"},
     "nav.adhoc_code": {"en": "Ad-hoc code", "fr": "Code ponctuel"},
     "nav.drafts": {"en": "Drafts", "fr": "Brouillons"},

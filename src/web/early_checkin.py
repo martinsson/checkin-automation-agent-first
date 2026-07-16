@@ -188,7 +188,7 @@ def _form_page(
       <button type="submit">{t("common.create_code")}</button>
     </form>
     {js}
-    <p class="links"><a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/review">{t("nav.drafts")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
+    <p class="links"><a href="/occupancy">{t("nav.free_nights")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/review">{t("nav.drafts")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
     return page(title=t("early.title"), content=content, max_width="440px", lang=t.lang)
 
 

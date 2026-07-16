@@ -55,15 +55,31 @@ class SmoobuBookingGateway(GuestBookingGateway):
             "accept": "application/json",
         }
 
-    async def upcoming_arrivals(self, days: int) -> list[Reservation]:
-        today = date.today()
-        params = {
-            "apartmentId": self._apartment_id,
-            "arrivalFrom": today.isoformat(),
-            "arrivalTo": (today + timedelta(days=days)).isoformat(),
-            "showCancellation": "false",
-            "pageSize": 100,
-        }
+    def _is_block(self, b: dict) -> bool:
+        return bool(b.get("is-blocked-booking")) or b.get("type") == "block"
+
+    def _to_reservation(self, b: dict) -> Reservation:
+        """Map one Smoobu /reservations item to a Reservation."""
+        name = (b.get("guest-name") or "").strip() or (
+            f"{b.get('firstname', '') or ''} {b.get('lastname', '') or ''}".strip()
+        )
+        if not name and self._is_block(b):
+            name = "Blocked"
+        channel = b.get("channel")
+        channel_name = channel.get("name") if isinstance(channel, dict) else (channel or "")
+        return Reservation(
+            booking_id=int(b["id"]),
+            property_id=self._apartment_id,
+            guest_name=name,
+            arrival=(b.get("arrival") or "").strip(),
+            departure=(b.get("departure") or "").strip(),
+            channel=str(channel_name or "").strip(),
+            status="block" if self._is_block(b) else str(b.get("status") or "").strip(),
+            language=str(b.get("language") or "").strip().lower(),
+            source=SOURCE_SMOOBU,
+        )
+
+    async def _fetch(self, params: dict) -> list[dict]:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(
@@ -75,32 +91,40 @@ class SmoobuBookingGateway(GuestBookingGateway):
             raise BookingGatewayError(
                 f"Smoobu reservations returned HTTP {resp.status_code}: {resp.text[:200]}"
             )
-        bookings = resp.json().get("bookings", []) or []
+        return resp.json().get("bookings", []) or []
 
-        out: list[Reservation] = []
-        for b in bookings:
-            # Owner-side calendar blocks aren't guests to message.
-            if b.get("is-blocked-booking") or b.get("type") == "block":
-                continue
-            arrival = (b.get("arrival") or "").strip()
-            name = (b.get("guest-name") or "").strip() or (
-                f"{b.get('firstname', '') or ''} {b.get('lastname', '') or ''}".strip()
-            )
-            channel = b.get("channel")
-            channel_name = channel.get("name") if isinstance(channel, dict) else (channel or "")
-            out.append(
-                Reservation(
-                    booking_id=int(b["id"]),
-                    property_id=self._apartment_id,
-                    guest_name=name,
-                    arrival=arrival,
-                    departure=(b.get("departure") or "").strip(),
-                    channel=str(channel_name or "").strip(),
-                    status=str(b.get("status") or "").strip(),
-                    language=str(b.get("language") or "").strip().lower(),
-                    source=SOURCE_SMOOBU,
-                )
-            )
+    async def upcoming_arrivals(self, days: int) -> list[Reservation]:
+        today = date.today()
+        bookings = await self._fetch(
+            {
+                "apartmentId": self._apartment_id,
+                "arrivalFrom": today.isoformat(),
+                "arrivalTo": (today + timedelta(days=days)).isoformat(),
+                "showCancellation": "false",
+                "pageSize": 100,
+            }
+        )
+        # Owner-side calendar blocks aren't guests to message.
+        out = [self._to_reservation(b) for b in bookings if not self._is_block(b)]
+        out.sort(key=lambda r: r.arrival)
+        return out
+
+    async def stays_overlapping(self, start: date, end: date) -> list[Reservation]:
+        """Guest stays and owner blocks touching any night in [start, end).
+
+        Filters by arrivalTo = last night and departureFrom = window start so a
+        stay that began earlier and is still in progress is still returned. Blocks
+        are kept here (a blocked night is not free)."""
+        bookings = await self._fetch(
+            {
+                "apartmentId": self._apartment_id,
+                "arrivalTo": (end - timedelta(days=1)).isoformat(),
+                "departureFrom": start.isoformat(),
+                "showCancellation": "false",
+                "pageSize": 100,
+            }
+        )
+        out = [self._to_reservation(b) for b in bookings]
         out.sort(key=lambda r: r.arrival)
         return out
 
