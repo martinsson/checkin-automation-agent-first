@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 
 from src.config.device_map import load_device_map
 from src.ports.door_lock import DoorCodeRequest, DoorLockError
+from src.web.i18n import Translator, translator_for
 from src.web.layout import brand, code_result, page
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def _clamp_start(starts_at: str, now_hour: datetime | None = None) -> str:
 
 
 def _form_page(
+    t: Translator,
     *,
     starts_at: str,
     ends_at: str,
@@ -69,7 +71,7 @@ def _form_page(
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
 
     selected = property_name.strip().casefold()
-    options = ['<option value="">— Default lock —</option>']
+    options = [f'<option value="">{html.escape(t("door.default_lock"))}</option>']
     for name in load_device_map().property_names:
         sel = " selected" if name.casefold() == selected else ""
         options.append(
@@ -77,27 +79,26 @@ def _form_page(
         )
     property_options = "\n".join(options)
 
-    content = f"""{brand(logo="🔐", heading="Create a door code",
-                         subtitle="Temporary Igloohome code via Make")}
+    content = f"""{brand(logo="🔐", heading=t("door.heading"),
+                         subtitle=t("door.subtitle"))}
     {error_html}
     <form method="post" action="/door-codes">
-      <label for="person_name">For whom (optional)</label>
+      <label for="person_name">{t("door.for_whom")}</label>
       <input id="person_name" name="person_name" value="{html.escape(person_name)}"
-             placeholder="e.g. Plombier Dupont — just a label" autofocus />
-      <label for="property_name">Property</label>
+             placeholder="{html.escape(t("door.for_whom_ph"))}" autofocus />
+      <label for="property_name">{t("common.property")}</label>
       <select id="property_name" name="property_name">
         {property_options}
       </select>
-      <label for="starts_at">Valid from</label>
+      <label for="starts_at">{t("door.valid_from")}</label>
       <input id="starts_at" type="datetime-local" name="starts_at" value="{starts_at}" required />
-      <label for="ends_at">Valid until</label>
+      <label for="ends_at">{t("door.valid_until")}</label>
       <input id="ends_at" type="datetime-local" name="ends_at" value="{ends_at}" required />
-      <p class="hint">Igloohome codes start and end on the hour — minutes are rounded
-         (start down, end up).</p>
-      <button type="submit">Create code</button>
+      <p class="hint">{t("door.hint")}</p>
+      <button type="submit">{t("common.create_code")}</button>
     </form>
-    <p class="links"><a href="/early-checkin">Early check-in</a> · <a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
-    return page(title="Create Door Code", content=content)
+    <p class="links"><a href="/early-checkin">{t("nav.early_checkin")}</a> · <a href="/review">{t("nav.drafts")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
+    return page(title=t("door.title"), content=content, lang=t.lang)
 
 
 def _round_to_hours(starts_at: str, ends_at: str) -> tuple[str, str]:
@@ -113,12 +114,14 @@ def _round_to_hours(starts_at: str, ends_at: str) -> tuple[str, str]:
 
 @router.get("/door-codes", response_class=HTMLResponse)
 async def door_code_form(request: Request):
+    t = translator_for(request)
     starts_at, ends_at = _default_window()
-    return HTMLResponse(_form_page(starts_at=starts_at, ends_at=ends_at))
+    return HTMLResponse(_form_page(t, starts_at=starts_at, ends_at=ends_at))
 
 
 @router.post("/door-codes", response_class=HTMLResponse)
 async def create_door_code(request: Request):
+    t = translator_for(request)
     form = await request.form()
     person_name = str(form.get("person_name", "")).strip()
     property_name = str(form.get("property_name", "")).strip()
@@ -129,6 +132,7 @@ async def create_door_code(request: Request):
         default_start, default_end = _default_window()
         return HTMLResponse(
             _form_page(
+                t,
                 starts_at=starts_at_raw or default_start,
                 ends_at=ends_at_raw or default_end,
                 person_name=person_name,
@@ -140,24 +144,22 @@ async def create_door_code(request: Request):
 
     door_lock = getattr(request.app.state, "door_lock", None)
     if door_lock is None:
-        return form_with_error(
-            "Door lock gateway is not configured (set MAKE_IGLOOHOME_WEBHOOK_URL)."
-        )
+        return form_with_error(t("err.no_gateway"))
 
     try:
         starts_at, ends_at = _round_to_hours(starts_at_raw, ends_at_raw)
     except ValueError:
-        return form_with_error("Invalid date/time format.")
+        return form_with_error(t("err.bad_datetime"))
 
     if ends_at <= starts_at:
-        return form_with_error("The end must be after the start.")
+        return form_with_error(t("err.end_before_start"))
 
     # A start in the past makes Igloohome reject the whole window; clamp it to
     # the current hour so an evening/late request is still valid ("from now").
     starts_at = _clamp_start(starts_at)
 
     if ends_at <= starts_at:
-        return form_with_error("That window is already over — pick an end time in the future.")
+        return form_with_error(t("err.window_over"))
 
     # "For whom" is just a label; fall back to the property (or a generic tag)
     # so the lock app still shows something meaningful when it's left blank.
@@ -175,18 +177,18 @@ async def create_door_code(request: Request):
         door_code = await door_lock.create_code(code_request)
     except DoorLockError as exc:
         log.error("Manual door code creation failed: %s", exc)
-        return form_with_error(f"Code creation failed: {exc}")
+        return form_with_error(t("err.create_failed", exc=exc))
 
     log.info(
         "Manual door code created for %r window=%s→%s code_id=%s",
         person_name, starts_at, ends_at, door_code.code_id,
     )
-    content = f"""{brand(logo="✅", heading="Code created")}
-    {code_result(door_code.code)}
+    content = f"""{brand(logo="✅", heading=t("common.code_created"))}
+    {code_result(door_code.code, t)}
     <p class="meta">
-      {f"For: <strong>{html.escape(person_name)}</strong><br>" if person_name else ""}
-      {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
-      Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
+      {f'{t("common.for")}: <strong>{html.escape(person_name)}</strong><br>' if person_name else ""}
+      {f'{t("common.property_label")}: {html.escape(property_name)}<br>' if property_name else ""}
+      {t("common.valid")}: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
     </p>
-    <p class="links"><a href="/door-codes">Create another</a> · <a href="/review">Drafts</a></p>"""
-    return HTMLResponse(page(title="Door Code Created", content=content))
+    <p class="links"><a href="/door-codes">{t("door.create_another")}</a> · <a href="/review">{t("nav.drafts")}</a></p>"""
+    return HTMLResponse(page(title=t("door.result_title"), content=content, lang=t.lang))

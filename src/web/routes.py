@@ -9,6 +9,7 @@ import html
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from src.web.i18n import translator_for
 from src.web.layout import brand, page
 
 log = logging.getLogger(__name__)
@@ -25,11 +26,12 @@ async def index():
 @router.get("/review", response_class=HTMLResponse)
 async def review_list(request: Request):
     """List all pending drafts for owner review."""
+    t = translator_for(request)
     memory = request.app.state.memory
     drafts = await memory.get_pending_drafts()
 
     if not drafts:
-        body = '<p class="empty">No pending drafts.</p>'
+        body = f'<p class="empty">{t("review.empty")}</p>'
     else:
         items = []
         for d in drafts:
@@ -41,47 +43,47 @@ async def review_list(request: Request):
                 if e.event_type == "hostbuddy_action_item":
                     context_html += f"""
 <div class="ctx ctx--guest">
-  <strong>Guest request</strong> ({html.escape(str(p.get('category', '')))})<br>
-  Guest: {html.escape(str(p.get('guest_name', '')))} — Property: {html.escape(str(p.get('property_name', '')))}<br>
+  <strong>{t("review.guest_request")}</strong> ({html.escape(str(p.get('category', '')))})<br>
+  {t("review.guest")}: {html.escape(str(p.get('guest_name', '')))} — {t("common.property_label")}: {html.escape(str(p.get('property_name', '')))}<br>
   <em>{html.escape(str(p.get('message_summary', '')))}</em>
 </div>"""
                 elif e.event_type == "cleaner_email_sent":
                     context_html += f"""
 <div class="ctx ctx--out">
-  <strong>Email sent to cleaner</strong> (date: {html.escape(str(p.get('date', '')))})<br>
+  <strong>{t("review.email_sent")}</strong> ({t("review.date")}: {html.escape(str(p.get('date', '')))})<br>
   <pre>{html.escape(str(p.get('message', '')))}</pre>
 </div>"""
                 elif e.event_type == "cleaner_reply":
                     context_html += f"""
 <div class="ctx ctx--reply">
-  <strong>Cleaner reply</strong><br>
+  <strong>{t("review.cleaner_reply")}</strong><br>
   <em>{html.escape(str(p.get('raw_text', '')))}</em>
 </div>"""
 
             items.append(f"""
 <div class="draft">
-  <h3>Draft #{d.draft_id} · {html.escape(str(d.intent))} · {html.escape(str(d.step))}</h3>
-  <div class="when">reservation {d.reservation_id} — {d.created_at.strftime('%Y-%m-%d %H:%M UTC')}</div>
-  <h4>Context</h4>
+  <h3>{t("review.draft")} #{d.draft_id} · {html.escape(str(d.intent))} · {html.escape(str(d.step))}</h3>
+  <div class="when">{t("review.reservation_word")} {d.reservation_id} — {d.created_at.strftime('%Y-%m-%d %H:%M UTC')}</div>
+  <h4>{t("review.context")}</h4>
   {context_html}
-  <h4>Proposed reply to guest</h4>
+  <h4>{t("review.proposed")}</h4>
   <pre class="reply">{html.escape(str(d.draft_body))}</pre>
   <div class="actions">
     <form method="post" action="/review/{d.draft_id}/approve">
-      <button type="submit" class="inline">Approve &amp; Send</button>
+      <button type="submit" class="inline">{t("review.approve")}</button>
     </form>
     <form method="post" action="/review/{d.draft_id}/reject">
-      <input name="comment" placeholder="Why rejected?" />
-      <button type="submit" class="inline danger">Reject</button>
+      <input name="comment" placeholder="{html.escape(t("review.why_rejected"))}" />
+      <button type="submit" class="inline danger">{t("review.reject")}</button>
     </form>
   </div>
 </div>""")
         body = "\n".join(items)
 
-    content = f"""{brand(logo="📋", heading="Pending Drafts")}
+    content = f"""{brand(logo="📋", heading=t("review.heading"))}
     {body}
-    <p class="links"><a href="/early-checkin">Early check-in</a> · <a href="/door-codes">Ad-hoc code</a> · <a href="/logout">Logout</a></p>"""
-    return HTMLResponse(page(title="Draft Review", content=content, max_width="720px"))
+    <p class="links"><a href="/early-checkin">{t("nav.early_checkin")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
+    return HTMLResponse(page(title=t("review.title"), content=content, max_width="720px", lang=t.lang))
 
 
 @router.post("/review/{draft_id}/approve")

@@ -5,6 +5,9 @@ consistent without each one re-declaring styles.
 """
 
 import html
+import json
+
+from src.web.i18n import DEFAULT_LANG, Translator
 
 # The whole design system in one stylesheet. Plain string (not an f-string), so
 # CSS braces are written normally.
@@ -22,6 +25,7 @@ body {
 /* margin:auto centers the card on both axes, and (unlike align-items:center)
    lets a taller-than-viewport list still scroll to the top. */
 .card {
+  position: relative;
   background: #fff;
   width: 100%;
   margin: auto;
@@ -29,6 +33,12 @@ body {
   border-radius: 14px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
+/* FR/EN switcher, tucked into the card's top-right corner. */
+.langsw { position: absolute; top: 0.75rem; right: 0.9rem; font-size: 0.72rem; letter-spacing: 0.03em; }
+.langsw a { color: #9ca3af; text-decoration: none; padding: 0 0.15rem; }
+.langsw a:hover { text-decoration: underline; }
+.langsw a.active { color: #2d6a4f; font-weight: 700; }
+.langsw span { color: #d1d5db; }
 .brand { text-align: center; margin-bottom: 1.75rem; }
 .brand .logo { font-size: 2.25rem; line-height: 1; }
 .brand h1 { font-size: 1.15rem; margin: 0.5rem 0 0.15rem; font-weight: 600; }
@@ -159,22 +169,25 @@ def brand(*, logo: str, heading: str, subtitle: str = "") -> str:
     return f'<div class="brand"><div class="logo">{logo}</div><h1>{heading}</h1>{sub}</div>'
 
 
-def code_result(code: str) -> str:
+def code_result(code: str, t: Translator | None = None) -> str:
     """The green code box with a one-tap Copy button (Clipboard API + fallback)."""
+    t = t or Translator(DEFAULT_LANG)
+    copy_label = html.escape(t("copy.button"))
     return f"""<div class="success">
       <div class="code" id="code">{html.escape(code)}</div>
-      <button type="button" class="inline copy" id="copy-btn">Copy code</button>
+      <button type="button" class="inline copy" id="copy-btn">{copy_label}</button>
     </div>
     <script>
       (function () {{
         var btn = document.getElementById('copy-btn');
         var code = document.getElementById('code').textContent.trim();
+        var LBL = {json.dumps(t("copy.button"), ensure_ascii=False)}, DONE = {json.dumps(t("copy.done"), ensure_ascii=False)};
         btn.addEventListener('click', function () {{
           function done() {{
-            btn.textContent = 'Copied \\u2713';
+            btn.textContent = DONE;
             btn.classList.add('done');
             setTimeout(function () {{
-              btn.textContent = 'Copy code';
+              btn.textContent = LBL;
               btn.classList.remove('done');
             }}, 1500);
           }}
@@ -193,10 +206,27 @@ def code_result(code: str) -> str:
     </script>"""
 
 
-def page(*, title: str, content: str, max_width: str = "420px") -> str:
+def _lang_switcher(lang: str) -> str:
+    """Two-link FR/EN switcher. Each link sets the `lang` cookie via /lang/<code>
+    and the route bounces back to the referring page. The active language is a
+    plain bold label rather than a link."""
+    def item(code: str, label: str) -> str:
+        if code == lang:
+            return f'<a class="active">{label}</a>'
+        return f'<a href="/lang/{code}">{label}</a>'
+
+    return (
+        '<div class="langsw">'
+        f'{item("en", "EN")}<span>·</span>{item("fr", "FR")}'
+        "</div>"
+    )
+
+
+def page(*, title: str, content: str, max_width: str = "420px", lang: str = DEFAULT_LANG) -> str:
     """Wrap card content in the full HTML document with the shared design system."""
+    doc_lang = lang if lang in ("en", "fr") else DEFAULT_LANG
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{doc_lang}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -207,6 +237,7 @@ def page(*, title: str, content: str, max_width: str = "420px") -> str:
 </head>
 <body>
   <main class="card">
+{_lang_switcher(doc_lang)}
 {content}
   </main>
 </body>

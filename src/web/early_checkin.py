@@ -27,6 +27,7 @@ from src.ports.reservations import (
     Reservation,
 )
 from src.web.door_codes import _clamp_start, _round_to_hours
+from src.web.i18n import Translator, translator_for
 from src.web.layout import brand, code_result, page
 
 log = logging.getLogger(__name__)
@@ -79,12 +80,12 @@ _FORM_JS = """
       resSel.innerHTML = '';
       startI.value = ''; endI.value = ''; guest.value = ''; srcI.value = '';
       if (!list.length) {
-        resSel.appendChild(new Option('No upcoming reservations', ''));
+        resSel.appendChild(new Option(__NO_RES__, ''));
         resSel.disabled = true;
         return;
       }
       resSel.disabled = false;
-      resSel.appendChild(new Option('— Select reservation —', ''));
+      resSel.appendChild(new Option(__SELECT_RES__, ''));
       list.forEach(function (r) {
         var label = fmt(r.arrival) + ' → ' + fmt(r.departure) + ' · ' + r.name +
                     (r.channel ? ' (' + r.channel + ')' : '');
@@ -123,6 +124,7 @@ def _hour_options(selected: int) -> str:
 
 
 def _form_page(
+    t: Translator,
     *,
     reservations: list[Reservation],
     error: str = "",
@@ -138,7 +140,7 @@ def _form_page(
     # property_id on that unit's reservations so the client-side filter matches.
     props: list[tuple[str, int | None]] = [(n, pm.id_for(n)) for n in pm.property_names]
     props.extend(extra_properties or [])
-    options = ['<option value="">— Select property —</option>']
+    options = [f'<option value="">{html.escape(t("early.select_property"))}</option>']
     for name, pid in props:
         options.append(
             f'<option value="{html.escape(name)}" data-pid="{pid}">'
@@ -146,45 +148,48 @@ def _form_page(
         )
     property_options = "\n".join(options)
 
-    js = _FORM_JS.replace("__RES__", _reservations_json(reservations))
+    js = (
+        _FORM_JS.replace("__RES__", _reservations_json(reservations))
+        .replace("__NO_RES__", json.dumps(t("early.no_reservations"), ensure_ascii=False))
+        .replace("__SELECT_RES__", json.dumps(t("early.select_reservation"), ensure_ascii=False))
+    )
 
-    content = f"""{brand(logo="🏠", heading="Early check-in code",
-                         subtitle="Create a code for a guest and send it")}
+    content = f"""{brand(logo="🏠", heading=t("early.heading"),
+                         subtitle=t("early.subtitle"))}
     {error_html}
     <form method="post" action="/early-checkin">
-      <label for="property">Property</label>
+      <label for="property">{t("common.property")}</label>
       <select id="property" name="property_name" required>
         {property_options}
       </select>
-      <label for="reservation">Reservation</label>
+      <label for="reservation">{t("early.reservation")}</label>
       <select id="reservation" name="reservation_id" required disabled>
-        <option value="">— Select property first —</option>
+        <option value="">{html.escape(t("early.select_property_first"))}</option>
       </select>
       {note_html}
       <input type="hidden" id="guest_name" name="guest_name" value="" />
       <input type="hidden" id="guest_language" name="guest_language" value="" />
       <input type="hidden" id="source" name="source" value="" />
-      <label for="start_date">Valid from</label>
+      <label for="start_date">{t("early.valid_from")}</label>
       <div class="dt-row">
         <input id="start_date" type="date" name="start_date" required />
-        <select id="start_hour" name="start_hour" class="hour" aria-label="Start hour">
+        <select id="start_hour" name="start_hour" class="hour" aria-label="{html.escape(t("early.start_hour"))}">
           {_hour_options(14)}
         </select>
       </div>
-      <label for="end_date">Valid until</label>
+      <label for="end_date">{t("early.valid_until")}</label>
       <div class="dt-row">
         <input id="end_date" type="date" name="end_date" required />
-        <select id="end_hour" name="end_hour" class="hour" aria-label="End hour">
+        <select id="end_hour" name="end_hour" class="hour" aria-label="{html.escape(t("early.end_hour"))}">
           {_hour_options(12)}
         </select>
       </div>
-      <p class="hint">Date fills in from the reservation — for an early check-in
-         just change the start hour. Defaults: from 14:00 → until 12:00.</p>
-      <button type="submit">Create code</button>
+      <p class="hint">{t("early.hint")}</p>
+      <button type="submit">{t("common.create_code")}</button>
     </form>
     {js}
-    <p class="links"><a href="/door-codes">Ad-hoc code</a> · <a href="/review">Drafts</a> · <a href="/logout">Logout</a></p>"""
-    return page(title="Early check-in", content=content, max_width="440px")
+    <p class="links"><a href="/door-codes">{t("nav.adhoc_code")}</a> · <a href="/review">{t("nav.drafts")}</a> · <a href="/logout">{t("nav.logout")}</a></p>"""
+    return page(title=t("early.title"), content=content, max_width="440px", lang=t.lang)
 
 
 def _fmt_dt(iso: str) -> str:
@@ -215,8 +220,11 @@ def _compose_message(code: str, starts_at: str, ends_at: str, language: str = ""
     )
 
 
-def _lang_label(language: str) -> str:
-    return "French" if language.strip().lower().startswith("fr") else "English"
+def _lang_label(t: Translator, language: str) -> str:
+    """Name of the *guest message* language (French/English), rendered in the UI
+    language — this labels which language the pre-filled message is written in."""
+    key = "lang.french" if language.strip().lower().startswith("fr") else "lang.english"
+    return t(key)
 
 
 def _gateways(request: Request) -> dict[str, GuestBookingGateway]:
@@ -234,22 +242,24 @@ def _gateways(request: Request) -> dict[str, GuestBookingGateway]:
 
 async def _render_form(request: Request, *, error: str = "") -> HTMLResponse:
     """Render the form, (re)loading upcoming reservations from every gateway."""
+    t = translator_for(request)
     gateways = _gateways(request)
     reservations: list[Reservation] = []
     extra_properties: list[tuple[str, int]] = []
     notes: list[str] = []
     if not gateways:
-        notes.append("Reservations unavailable — no booking backend is configured on this server.")
+        notes.append(t("early.no_backend"))
     for source, gateway in gateways.items():
         try:
             reservations.extend(await gateway.upcoming_arrivals(_LOOKAHEAD_DAYS))
         except BookingGatewayError as exc:
             log.error("Loading %s reservations failed: %s", source, exc)
-            notes.append(f"Could not load {source} reservations: {exc}")
+            notes.append(t("early.load_failed", source=source, exc=exc))
         # Non-Beds24 units aren't in the YAML property map — add them to the dropdown.
         extra_properties.extend(gateway.managed_properties())
     return HTMLResponse(
         _form_page(
+            t,
             reservations=reservations,
             error=error,
             note=" ".join(notes),
@@ -268,6 +278,7 @@ async def early_checkin_form(request: Request):
 async def create_early_checkin(request: Request):
     """Create the code, then show it with a pre-filled, editable message and a
     Send button (the send itself is POST /early-checkin/send)."""
+    t = translator_for(request)
     form = await request.form()
     property_name = str(form.get("property_name", "")).strip()
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
@@ -286,27 +297,23 @@ async def create_early_checkin(request: Request):
 
     door_lock = getattr(request.app.state, "door_lock", None)
     if door_lock is None:
-        return await _render_form(
-            request, error="Door lock gateway is not configured (set MAKE_IGLOOHOME_WEBHOOK_URL)."
-        )
+        return await _render_form(request, error=t("err.no_gateway"))
     if not property_name:
-        return await _render_form(request, error="Select a property.")
+        return await _render_form(request, error=t("err.select_property"))
     try:
         booking_id = int(reservation_id_raw)
     except ValueError:
-        return await _render_form(request, error="Select a reservation.")
+        return await _render_form(request, error=t("err.select_reservation"))
 
     try:
         starts_at, ends_at = _round_to_hours(starts_at_raw, ends_at_raw)
     except ValueError:
-        return await _render_form(request, error="Invalid date/time format.")
+        return await _render_form(request, error=t("err.bad_datetime"))
     if ends_at <= starts_at:
-        return await _render_form(request, error="The end must be after the start.")
+        return await _render_form(request, error=t("err.end_before_start"))
     starts_at = _clamp_start(starts_at)
     if ends_at <= starts_at:
-        return await _render_form(
-            request, error="That window is already over — pick an end time in the future."
-        )
+        return await _render_form(request, error=t("err.window_over"))
 
     code_request = DoorCodeRequest(
         person_name=guest_name,
@@ -322,7 +329,7 @@ async def create_early_checkin(request: Request):
         door_code = await door_lock.create_code(code_request)
     except DoorLockError as exc:
         log.error("Early-checkin code creation failed: %s", exc)
-        return await _render_form(request, error=f"Code creation failed: {exc}")
+        return await _render_form(request, error=t("err.create_failed", exc=exc))
 
     log.info(
         "Early-checkin code created booking=%s window=%s→%s", booking_id, starts_at, ends_at
@@ -330,6 +337,7 @@ async def create_early_checkin(request: Request):
     message = _compose_message(door_code.code, starts_at, ends_at, guest_language)
     return HTMLResponse(
         _result_page(
+            t,
             code=door_code.code,
             guest_name=guest_name,
             property_name=property_name,
@@ -346,6 +354,7 @@ async def create_early_checkin(request: Request):
 @router.post("/early-checkin/send", response_class=HTMLResponse)
 async def send_early_checkin(request: Request):
     """Send the (possibly edited) message to the guest on their booking."""
+    t = translator_for(request)
     form = await request.form()
     reservation_id_raw = str(form.get("reservation_id", "")).strip()
     guest_name = str(form.get("guest_name", "")).strip()
@@ -355,51 +364,53 @@ async def send_early_checkin(request: Request):
     try:
         booking_id = int(reservation_id_raw)
     except ValueError:
-        return HTMLResponse(_sent_error_page("Missing reservation — go back and create the code again."))
+        return HTMLResponse(_sent_error_page(t, t("err.missing_reservation")))
     if not message:
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message, source, error="The message is empty.")
+            _send_result_page(t, booking_id, guest_name, message, source, error=t("err.empty_message"))
         )
 
     # Route the send back to the PMS the booking came from (Beds24 / Smoobu).
     gateway = _gateways(request).get(source)
     if gateway is None:
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message, source,
-                              error=f"The {source} backend is not configured — cannot send.")
+            _send_result_page(t, booking_id, guest_name, message, source,
+                              error=t("err.backend_not_configured", source=source))
         )
     try:
         await gateway.send_guest_message(booking_id, message)
     except BookingGatewayError as exc:
         log.error("Sending early-checkin message failed: %s", exc)
         return HTMLResponse(
-            _send_result_page(booking_id, guest_name, message, source,
-                              error=f"Sending failed: {exc}")
+            _send_result_page(t, booking_id, guest_name, message, source,
+                              error=t("err.send_failed", exc=exc))
         )
 
     log.info("Early-checkin message sent on booking %s (%d chars)", booking_id, len(message))
-    content = f"""{brand(logo="📨", heading="Sent")}
-    <p class="success" style="text-align:center">Message sent to
-      <strong>{html.escape(guest_name or 'the guest')}</strong> ✓</p>
-    <p class="links"><a href="/early-checkin">Another guest</a> · <a href="/door-codes">Ad-hoc code</a></p>"""
-    return HTMLResponse(page(title="Early check-in — sent", content=content))
+    guest_label = html.escape(guest_name or t("early.the_guest"))
+    content = f"""{brand(logo="📨", heading=t("early.sent_heading"))}
+    <p class="success" style="text-align:center">{t("early.sent_body", name=f"<strong>{guest_label}</strong>")}</p>
+    <p class="links"><a href="/early-checkin">{t("early.another_guest")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a></p>"""
+    return HTMLResponse(page(title=t("early.sent_title"), content=content, lang=t.lang))
 
 
-def _send_form(booking_id: int, guest_name: str, message: str, language: str, source: str, error: str = "") -> str:
+def _send_form(t: Translator, booking_id: int, guest_name: str, message: str, language: str, source: str, error: str = "") -> str:
     """The editable message + Send button (reused on the result and on send failure)."""
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
+    label = t("early.msg_to", name=html.escape(guest_name or t("early.the_guest")), lang=_lang_label(t, language))
     return f"""{error_html}
     <form method="post" action="/early-checkin/send">
       <input type="hidden" name="reservation_id" value="{booking_id}" />
       <input type="hidden" name="guest_name" value="{html.escape(guest_name)}" />
       <input type="hidden" name="source" value="{html.escape(source)}" />
-      <label for="message">Message to {html.escape(guest_name or 'the guest')} ({_lang_label(language)})</label>
+      <label for="message">{label}</label>
       <textarea id="message" name="message" rows="9">{html.escape(message)}</textarea>
-      <button type="submit">Send to guest</button>
+      <button type="submit">{t("early.send_to_guest")}</button>
     </form>"""
 
 
 def _result_page(
+    t: Translator,
     *,
     code: str,
     guest_name: str,
@@ -411,28 +422,28 @@ def _result_page(
     language: str,
     source: str,
 ) -> str:
-    content = f"""{brand(logo="✅", heading="Code created")}
-    {code_result(code)}
+    content = f"""{brand(logo="✅", heading=t("common.code_created"))}
+    {code_result(code, t)}
     <p class="meta">
-      {f"For: <strong>{html.escape(guest_name)}</strong><br>" if guest_name else ""}
-      {f"Property: {html.escape(property_name)}<br>" if property_name else ""}
-      Valid: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
+      {f'{t("common.for")}: <strong>{html.escape(guest_name)}</strong><br>' if guest_name else ""}
+      {f'{t("common.property_label")}: {html.escape(property_name)}<br>' if property_name else ""}
+      {t("common.valid")}: {starts_at.replace("T", " ")[:16]} &rarr; {ends_at.replace("T", " ")[:16]}
     </p>
-    {_send_form(booking_id, guest_name, message, language, source)}
-    <p class="links"><a href="/early-checkin">Another guest</a> · <a href="/door-codes">Ad-hoc code</a></p>"""
-    return page(title="Early check-in — code created", content=content, max_width="460px")
+    {_send_form(t, booking_id, guest_name, message, language, source)}
+    <p class="links"><a href="/early-checkin">{t("early.another_guest")}</a> · <a href="/door-codes">{t("nav.adhoc_code")}</a></p>"""
+    return page(title=t("early.result_title"), content=content, max_width="460px", lang=t.lang)
 
 
-def _send_result_page(booking_id: int, guest_name: str, message: str, source: str, *, error: str) -> str:
+def _send_result_page(t: Translator, booking_id: int, guest_name: str, message: str, source: str, *, error: str) -> str:
     """Shown when a send fails — keep the editable message so the owner can retry."""
-    content = f"""{brand(logo="✉️", heading="Send the code")}
-    {_send_form(booking_id, guest_name, message, "", source, error=error)}
-    <p class="links"><a href="/early-checkin">Start over</a></p>"""
-    return page(title="Early check-in — send", content=content, max_width="460px")
+    content = f"""{brand(logo="✉️", heading=t("early.send_heading"))}
+    {_send_form(t, booking_id, guest_name, message, "", source, error=error)}
+    <p class="links"><a href="/early-checkin">{t("early.start_over")}</a></p>"""
+    return page(title=t("early.send_title"), content=content, max_width="460px", lang=t.lang)
 
 
-def _sent_error_page(msg: str) -> str:
-    content = f"""{brand(logo="⚠️", heading="Couldn't send")}
+def _sent_error_page(t: Translator, msg: str) -> str:
+    content = f"""{brand(logo="⚠️", heading=t("early.couldnt_send"))}
     <p class="error">{html.escape(msg)}</p>
-    <p class="links"><a href="/early-checkin">Back to early check-in</a></p>"""
-    return page(title="Early check-in — error", content=content)
+    <p class="links"><a href="/early-checkin">{t("early.back")}</a></p>"""
+    return page(title=t("early.error_title"), content=content, lang=t.lang)
