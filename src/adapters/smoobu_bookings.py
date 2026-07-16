@@ -57,10 +57,13 @@ class SmoobuBookingGateway(GuestBookingGateway):
 
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         today = date.today()
+        # Stays *overlapping* [today, today+days], not only those arriving from
+        # today on: `departureFrom = today` keeps a guest who is already in-house
+        # (arrived earlier, checking out today or later) in the list too.
         params = {
             "apartmentId": self._apartment_id,
-            "arrivalFrom": today.isoformat(),
             "arrivalTo": (today + timedelta(days=days)).isoformat(),
+            "departureFrom": today.isoformat(),
             "showCancellation": "false",
             "pageSize": 100,
         }

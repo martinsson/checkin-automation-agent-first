@@ -36,6 +36,19 @@ _RESERVATIONS_BODY = {
             "is-blocked-booking": False,
         },
         {
+            # Guest already in-house: arrived days ago, checks out today. Must
+            # still be listed so an ad-hoc code can be issued to a current guest.
+            "id": 139640000,
+            "type": "reservation",
+            "arrival": "2026-07-12",
+            "departure": "2026-07-16",
+            "apartment": {"id": APT_ID, "name": "L'Hippocrate"},
+            "channel": {"id": 1, "name": "Airbnb"},
+            "guest-name": "Paul Durand",
+            "language": "FR",
+            "is-blocked-booking": False,
+        },
+        {
             # Owner calendar block — must be filtered out (not a guest to message).
             "id": 999,
             "type": "block",
@@ -64,15 +77,20 @@ def test_upcoming_arrivals_parses_and_skips_blocks(monkeypatch):
         # WAF trick: a browser-like UA, not the default httpx one.
         assert "Mozilla" in request.headers["user-agent"]
         assert request.url.params["apartmentId"] == str(APT_ID)
+        # Query by departure (still-ongoing stays), not arrival, so guests
+        # already in-house stay in the list.
+        assert "departureFrom" in request.url.params
+        assert "arrivalFrom" not in request.url.params
         return httpx.Response(200, json=_RESERVATIONS_BODY)
 
     _install_transport(monkeypatch, handler)
     gw = SmoobuBookingGateway(api_key="k", apartment_id=APT_ID)
     res = asyncio.run(gw.upcoming_arrivals(60))
 
-    assert len(res) == 1  # the block is dropped
-    r = res[0]
-    assert r.booking_id == 139632572
+    assert len(res) == 2  # the block is dropped, both guests kept
+    ids = {r.booking_id for r in res}
+    assert ids == {139632572, 139640000}  # includes the in-house (checkout-today) guest
+    r = next(r for r in res if r.booking_id == 139632572)
     assert r.property_id == APT_ID
     assert r.guest_name == "Marine Cuenot"
     assert r.channel == "Airbnb"

@@ -42,9 +42,13 @@ class Beds24BookingGateway(GuestBookingGateway):
 
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         today = date.today()
+        # Select stays *overlapping* [today, today+days] rather than only those
+        # arriving from today on: `departureFrom = today` keeps guests already
+        # in-house (arrived earlier, still here or checking out today) in the
+        # list, so an ad-hoc code can be issued to a current guest too.
         params = {
-            "arrivalFrom": today.isoformat(),
             "arrivalTo": (today + timedelta(days=days)).isoformat(),
+            "departureFrom": today.isoformat(),
             "status": list(_LIVE_STATUSES),
         }
         try:

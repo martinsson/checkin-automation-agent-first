@@ -39,7 +39,9 @@ class GuestBookingGateway(ABC):
 
     @abstractmethod
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
-        """Reservations arriving from today through today+days (live bookings only)."""
+        """Live stays overlapping [today, today+days]: those arriving within the
+        window plus any guest already in-house (arrived earlier, still here or
+        checking out today). Lets a code be issued to a current guest too."""
         ...
 
     @abstractmethod
