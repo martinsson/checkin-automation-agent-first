@@ -13,6 +13,13 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.web.i18n import (
+    DEFAULT_LANG,
+    LANG_COOKIE,
+    LANG_COOKIE_MAX_AGE,
+    normalize_lang,
+    translator_for,
+)
 from src.web.layout import brand, page
 
 log = logging.getLogger(__name__)
@@ -50,6 +57,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             or path.startswith("/events/")
             or path.startswith("/requests/")
             or path.startswith("/cocon/api/")
+            or path.startswith("/lang/")  # language switch works before login too
         ):
             return await call_next(request)
 
@@ -63,29 +71,54 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def _login_page(*, error: str = "", username: str = "") -> str:
+def _login_page(t, *, error: str = "", username: str = "") -> str:
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
-    content = f"""{brand(logo="🔑", heading="Check-in Console", subtitle="Owner sign-in")}
+    content = f"""{brand(logo="🔑", heading=t("login.heading"), subtitle=t("login.subtitle"))}
     {error_html}
     <form method="post" action="/login">
-      <label for="username">User</label>
+      <label for="username">{t("login.user")}</label>
       <input id="username" name="username" type="text" autocomplete="username"
              value="{html.escape(username)}" autocapitalize="none" autofocus required />
-      <label for="password">Password</label>
+      <label for="password">{t("login.password")}</label>
       <input id="password" name="password" type="password"
              autocomplete="current-password" required />
-      <button type="submit">Sign in</button>
+      <button type="submit">{t("login.submit")}</button>
     </form>"""
-    return page(title="Login — Check-in", content=content, max_width="360px")
+    return page(title=t("login.title"), content=content, max_width="360px", lang=t.lang)
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page():
-    return HTMLResponse(_login_page())
+async def login_page(request: Request):
+    return HTMLResponse(_login_page(translator_for(request)))
+
+
+@router.get("/lang/{code}")
+async def set_language(code: str, request: Request):
+    """Set the UI-language cookie and bounce back to the page the owner came
+    from (same-origin Referer only, else the home page)."""
+    lang = normalize_lang(code) or DEFAULT_LANG
+    referer = request.headers.get("referer", "")
+    next_url = "/"
+    if referer:
+        # Keep only the local path+query so we never redirect off-site.
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(referer)
+        if parts.path.startswith("/"):
+            next_url = parts.path + (f"?{parts.query}" if parts.query else "")
+    response = RedirectResponse(url=next_url, status_code=303)
+    response.set_cookie(
+        LANG_COOKIE,
+        lang,
+        max_age=LANG_COOKIE_MAX_AGE,
+        samesite="lax",
+    )
+    return response
 
 
 @router.post("/login")
 async def login(request: Request):
+    t = translator_for(request)
     form = await request.form()
     username = str(form.get("username", "")).strip().casefold()
     password = str(form.get("password", ""))
@@ -93,7 +126,7 @@ async def login(request: Request):
 
     if username not in _USERS or password != review_token:
         return HTMLResponse(
-            _login_page(error="Wrong user or password.", username=username),
+            _login_page(t, error=t("login.error"), username=username),
             status_code=401,
         )
 

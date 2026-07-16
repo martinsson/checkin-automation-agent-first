@@ -104,6 +104,20 @@ the script. Tests: `tests/test_payment_reconcile.py` (real BP/Qonto wording).
 Note: this must run where it can reach `api.beds24.com` + Gmail IMAP (the box, or
 a local machine) — not the Cowork sandbox, whose network is restricted.
 
+## Owner console — English / French UI
+
+The owner-facing web pages (login, `/door-codes`, `/early-checkin`, `/review`)
+are bilingual. All user-facing strings live in `src/web/i18n.py` (`_STRINGS`
+table, keyed by short ids); each route builds a `Translator` via
+`translator_for(request)` and threads it into the page builders + `page(...,
+lang=)`. Language is resolved as **`lang` cookie → `Accept-Language` header →
+English default** — so a French browser gets French automatically, everyone else
+keeps English, and the corner FR/EN switcher (`GET /lang/<code>`, public in
+`AuthMiddleware`, bounces back via a host-stripped Referer) sets the cookie for a
+year. Add a new string by adding its key to `_STRINGS` with both `en` and `fr`;
+a missing translation falls back to English then to the raw key. Tests:
+`tests/test_i18n.py`.
+
 ## Door codes / self check-in
 
 See [docs/door-codes.md](./docs/door-codes.md) →
