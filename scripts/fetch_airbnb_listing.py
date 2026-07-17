@@ -52,7 +52,12 @@ def fetch(url: str) -> str:
         raw = gzip.decompress(raw)
     elif enc == "deflate":
         raw = zlib.decompress(raw)
-    return raw.decode("utf-8", "replace")
+    html = raw.decode("utf-8", "replace")
+    # airbnb.com answers geo-localized requests with a tiny meta-redirect page
+    # ("Redirection vers %{new_domain}") instead of a 3xx; hop to the local domain.
+    if len(html) < 2000 and "airbnb.com" in url:
+        return fetch(url.replace("www.airbnb.com", "www.airbnb.fr"))
+    return html
 
 
 def _meta(html: str, prop: str) -> str | None:
