@@ -13,7 +13,7 @@ const year = 2026;
 
     <nav class="foot__col" aria-label="Appartements">
       <h4>Les appartements</h4>
-      {listings.map((l) => (
+      {listings.filter((l) => !l.draft).map((l) => (
         <a href={url(`/appartements/${l.slug}/`)}>{l.name}</a>
       ))}
     </nav>

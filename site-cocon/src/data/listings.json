@@ -178,5 +178,32 @@
    "https://a0.muscache.com/im/pictures/hosting/Hosting-1687202647831226780/original/e1ae4b12-4d4b-4f13-ba5f-b29977ba858f.jpeg",
    "https://a0.muscache.com/im/pictures/hosting/Hosting-1687202647831226780/original/e31e6e2a-ce3a-4572-b8e4-70b8fcf09148.jpeg"
   ]
+ },
+ {
+  "slug": "hippocrate",
+  "name": "L’Hippocrate",
+  "fullName": "L’Hippocrate",
+  "draft": true,
+  "_todo": "Draft: filled with the known Smoobu id. Provide photos + description + address + the real Smoobu booking-tool URL, then set draft=false to publish.",
+  "channel": "smoobu",
+  "smoobuApartmentId": 3230512,
+  "bookingUrl": "TODO_SMOOBU_BOOKING_TOOL_URL",
+  "airbnbId": null,
+  "airbnbUrl": null,
+  "city": "Grenoble",
+  "address": "",
+  "postcode": "",
+  "lat": null,
+  "lng": null,
+  "maxPeople": 2,
+  "maxAdult": null,
+  "roomSize": null,
+  "rackRate": 0,
+  "minPrice": 0,
+  "minStay": null,
+  "checkIn": "16:00",
+  "checkOut": "11:00",
+  "description": "TODO — description de L’Hippocrate.",
+  "photos": []
  }
 ]

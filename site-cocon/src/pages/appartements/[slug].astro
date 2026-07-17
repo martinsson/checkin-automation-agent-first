@@ -4,7 +4,8 @@ import listings from '../../data/listings.json';
 import { url } from '../../lib/url';
 
 export function getStaticPaths() {
-  return listings.map((l) => ({ params: { slug: l.slug }, props: { l } }));
+  // Skip draft listings (incomplete content, e.g. a flat awaiting photos).
+  return listings.filter((l) => !l.draft).map((l) => ({ params: { slug: l.slug }, props: { l } }));
 }
 
 const { l } = Astro.props;
@@ -13,6 +14,17 @@ const gallery = l.photos.slice(1, 13);
 const mapsUrl = l.lat && l.lng
   ? `https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`
   : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((l.address ?? '') + ' ' + l.city)}`;
+
+// Booking widget differs by PMS channel. Beds24 (default) takes layout/lang query
+// params on its booking2.php URL; Smoobu's booking tool is a ready-made URL used
+// as-is (bookingIframeUrl when it differs from the fullscreen link).
+const channel = l.channel ?? 'beds24';
+const bookingIframeSrc = channel === 'beds24'
+  ? `${l.bookingUrl}&layout=2&lang=fr`
+  : (l.bookingIframeUrl ?? l.bookingUrl);
+const bookingPopoutUrl = channel === 'beds24'
+  ? `${l.bookingUrl}&lang=fr`
+  : l.bookingUrl;
 ---
 <Base title={`${l.name} — Cocon Grenoble`} description={paragraphs[0]?.slice(0, 155)}>
   <article class="detail">
@@ -56,7 +68,7 @@ const mapsUrl = l.lat && l.lng
 
         <div class="detail__links">
           <a href={mapsUrl} target="_blank" rel="noopener" class="chip">📍 Voir sur la carte</a>
-          <a href={l.airbnbUrl} target="_blank" rel="noopener" class="chip">Voir l’annonce Airbnb ↗</a>
+          {l.airbnbUrl && <a href={l.airbnbUrl} target="_blank" rel="noopener" class="chip">Voir l’annonce Airbnb ↗</a>}
         </div>
       </div>
 
@@ -66,13 +78,13 @@ const mapsUrl = l.lat && l.lng
           <p class="booking__note">Choisissez vos dates ci-dessous. Tarifs en temps réel, paiement sécurisé — sans commission de plateforme.</p>
           <div class="booking__frame">
             <iframe
-              src={`${l.bookingUrl}&layout=2&lang=fr`}
+              src={bookingIframeSrc}
               title={`Réservation — ${l.name}`}
               loading="lazy"
               referrerpolicy="no-referrer-when-downgrade"
             ></iframe>
           </div>
-          <a href={`${l.bookingUrl}&lang=fr`} target="_blank" rel="noopener" class="booking__pop">Ouvrir en plein écran ↗</a>
+          <a href={bookingPopoutUrl} target="_blank" rel="noopener" class="booking__pop">Ouvrir en plein écran ↗</a>
         </div>
       </aside>
     </div>
