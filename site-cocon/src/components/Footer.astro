@@ -7,13 +7,13 @@ const year = 2026;
   <div class="wrap foot__grid">
     <div class="foot__brand">
       <span class="foot__name">Cocon<span>Grenoble</span></span>
-      <p class="foot__tag">Quatre cocons soignés à louer à Grenoble &amp; Saint-Martin-d’Hères. Réservation directe, sans commission d’intermédiaire.</p>
+      <p class="foot__tag">Des cocons soignés à louer à Grenoble &amp; Saint-Martin-d’Hères. Réservation directe, sans commission d’intermédiaire.</p>
       <a href={url('/#contact')} class="foot__mail">Nous écrire →</a>
     </div>
 
     <nav class="foot__col" aria-label="Appartements">
       <h4>Les appartements</h4>
-      {listings.map((l) => (
+      {listings.filter((l) => !l.draft).map((l) => (
         <a href={url(`/appartements/${l.slug}/`)}>{l.name}</a>
       ))}
     </nav>

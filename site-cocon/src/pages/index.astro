@@ -8,7 +8,14 @@ const excerpt = (txt, n = 165) => {
   const flat = txt.replace(/\s+/g, ' ').trim();
   return flat.length > n ? flat.slice(0, flat.lastIndexOf(' ', n)) + '…' : flat;
 };
-const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
+// Draft listings (incomplete content) are hidden until ready.
+const visible = listings.filter((l) => !l.draft);
+const hero = visible.find((l) => l.slug === 'matisse') ?? visible[0];
+const countWords = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit'];
+const aptCount = visible.length;
+const aptCountWord = countWords[aptCount] ?? String(aptCount);
+const capMin = Math.min(...visible.map((l) => l.maxPeople));
+const capMax = Math.max(...visible.map((l) => l.maxPeople));
 ---
 <Base>
   <!-- ============ HERO ============ -->
@@ -22,7 +29,7 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
           <span class="load-rise" style="animation-delay:.19s">vraiment.</span>
         </h1>
         <p class="hero__lede load-rise" style="animation-delay:.26s">
-          Quatre appartements pensés dans le détail, au cœur de Grenoble.
+          {aptCountWord.charAt(0).toUpperCase() + aptCountWord.slice(1)} appartements pensés dans le détail, au cœur de Grenoble.
           Réservez en direct — mêmes logements que sur Airbnb, sans la commission.
         </p>
         <div class="hero__actions load-rise" style="animation-delay:.32s">
@@ -30,8 +37,8 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
           <a href="#sejour" class="btn btn--ghost">Le séjour</a>
         </div>
         <dl class="hero__stats load-rise" style="animation-delay:.38s">
-          <div><dt>4</dt><dd>appartements</dd></div>
-          <div><dt>2–6</dt><dd>voyageurs</dd></div>
+          <div><dt>{aptCount}</dt><dd>appartements</dd></div>
+          <div><dt>{capMin}–{capMax}</dt><dd>voyageurs</dd></div>
           <div><dt>0 %</dt><dd>commission</dd></div>
         </dl>
       </div>
@@ -59,7 +66,7 @@ const hero = listings.find((l) => l.slug === 'matisse') ?? listings[0];
     </div>
 
     <div class="apts__list">
-      {listings.map((l, i) => (
+      {visible.map((l, i) => (
         <article class="apt reveal">
           <a class="apt__media" href={url(`/appartements/${l.slug}/`)} aria-label={`Découvrir ${l.name}`}>
             <span class="apt__num">{String(i + 1).padStart(2, '0')}</span>
