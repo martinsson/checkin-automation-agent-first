@@ -80,17 +80,21 @@ Terracotta/La Palma €35, Le Fernand €65) and **Guilherme Veloso** (Le Matiss
 Airbnb/Booking.com — those are collected by the channel) have paid by bank
 transfer before arrival. Deterministic, no LLM:
 
-1. Reads upcoming arrivals from Beds24 (`includeInvoiceItems=true`), keeps direct
-   bookings with a balance due (`referer` not in `COLLECTED_CHANNELS`).
-2. Reads incoming-transfer alerts from the Gmail inbox over IMAP — Banque
-   Populaire (`nepasrepondre@banquepopulaire.fr`, "Suite Entreprise" / alerts) and
-   Qonto (`support@qonto.com`).
+1. Reads arrivals within the next `--days` (default **7** — the rule is "paid at
+   the latest 7 days before arrival") from Beds24 (`includeInvoiceItems=true`),
+   keeps direct bookings with a balance due (`referer` not in `COLLECTED_CHANNELS`).
+2. Reads incoming-transfer alerts from the Gmail inbox over IMAP. **Received
+   transfers only** — BP uses one template for both directions; the parser drops
+   "Exécution de votre virement… / émis / Nom bénéficiaire" and keeps only
+   "Réception d'un virement… / à votre profit / Emetteur". Alerts often arrive
+   **forwarded** from a second mailbox, so the search matches on *content*
+   (subject/body markers: `virement`, `bpaura`), never on the From header.
 3. Matches by amount (±1€) with a guest-name hint and classifies each booking:
-   `PAID` / `WRONG_AMOUNT` / `UNPAID` (arrival near, nothing matched → chase).
+   `PAID` / `WRONG_AMOUNT` / `UNPAID` (deadline passed, nothing matched → chase).
 
 ```bash
-python3 scripts/payment_reconcile.py                 # next 5 days, report only
-python3 scripts/payment_reconcile.py --days 10 --email-to martinsson.johan@changit.fr
+python3 scripts/payment_reconcile.py                 # next 7 days, report only
+python3 scripts/payment_reconcile.py --days 60 --email-to martinsson.johan@changit.fr
 python3 scripts/payment_reconcile.py --mark-paid     # write matched payments to Beds24
 ```
 
@@ -98,8 +102,10 @@ Uses `BEDS24_READ_ALL_TOKEN` for reads and, only for `--mark-paid`, mints a
 write token from `BEDS24_REFRESH_TOKEN` and posts a `payment` invoice item
 (idempotent: tagged `[auto-reconcile:<sig>]`, skipped if already present). So
 once a transfer is recorded, the booking's balance hits 0 and it stops being
-flagged. Bank e-mail senders + collected-channel list are constants at the top of
-the script. Tests: `tests/test_payment_reconcile.py` (real BP/Qonto wording).
+flagged. Collected-channel list is a constant at the top of the script. Tests:
+`tests/test_payment_reconcile.py` (real BP received/sent wording).
+
+Server cron / manual setup steps: [docs/manual-server-steps.md](./docs/manual-server-steps.md).
 
 Note: this must run where it can reach `api.beds24.com` + Gmail IMAP (the box, or
 a local machine) — not the Cowork sandbox, whose network is restricted.
