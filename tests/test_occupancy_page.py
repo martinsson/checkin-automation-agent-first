@@ -221,6 +221,7 @@ def test_page_shows_stays_timeline_with_guest_names():
     assert "Klein" in resp.text            # bar carries the guest name
     assert "oc-tl-bar" in resp.text
     assert "oc-ch airbnb" in resp.text     # channel dot
+    assert resp.text.count("<thead>") == 2  # the day header is repeated above the timeline
 
 
 def test_recent_cancellation_shows_ghost_feed_entry_and_fresh_cells():

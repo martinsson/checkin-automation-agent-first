@@ -470,7 +470,25 @@ def _table_style(n_days: int) -> str:
     return f"min-width:{10.4 + n_days * 2.2:.1f}rem"
 
 
-def _render_timeline(props, days, by_prop, ghosts, now: datetime, c: dict) -> str:
+def _day_header(days: list[date], dow: list[str], tot_label: str) -> str:
+    """The day-of-week/day-number header row, shared by the grid and the stays
+    timeline (repeated there so the dates stay in sight below the fold)."""
+    today = date.today()
+    head = '<th class="prop"></th>'
+    for d in days:
+        cls = []
+        if d.weekday() >= 5:
+            cls.append("wknd")
+        if d == today:
+            cls.append("today")
+        head += (
+            f'<th class="{" ".join(cls)}"><span class="dow">{dow[d.weekday()]}</span>{d.day}</th>'
+        )
+    head += f'<th class="tot-h">{tot_label}</th>'
+    return f"<thead><tr>{head}</tr></thead>"
+
+
+def _render_timeline(props, days, by_prop, ghosts, now: datetime, c: dict, dow: list[str]) -> str:
     """Option D: one track per property, same day columns as the grid. Stays are
     grey bars (guest + channel dot); < 48h-old creations/modifications get a
     ring, fresh cancellations a dashed ghost over the nights they released."""
@@ -521,7 +539,7 @@ def _render_timeline(props, days, by_prop, ghosts, now: datetime, c: dict) -> st
     return (
         f'<p class="oc-sect">{html.escape(c["stays_title"])}</p>'
         f'<table class="oc-grid oc-tl" style="{_table_style(len(days))}">'
-        f"{_colgroup(len(days))}<tbody>{rows}</tbody></table>"
+        f"{_colgroup(len(days))}{_day_header(days, dow, '')}<tbody>{rows}</tbody></table>"
     )
 
 
@@ -599,19 +617,6 @@ def _render(props, days, by_prop, window_days: int, lang: str, note: str = "",
     if not props:
         body = f'<p class="oc-empty">{html.escape(c["no_properties"])}</p>'
     else:
-        # Header row
-        head = '<th class="prop"></th>'
-        for d in days:
-            cls = []
-            if d.weekday() >= 5:
-                cls.append("wknd")
-            if d == today:
-                cls.append("today")
-            head += (
-                f'<th class="{" ".join(cls)}"><span class="dow">{dow[d.weekday()]}</span>{d.day}</th>'
-            )
-        head += f'<th class="tot-h">{c["free_col"]}</th>'
-
         # Property rows (rows come out of _build_grid in props order, so zip is safe)
         body_rows = ""
         for (name, cells, free_count), (_pname, pid) in zip(rows, props):
@@ -640,11 +645,11 @@ def _render(props, days, by_prop, window_days: int, lang: str, note: str = "",
         prop_names = {pid: name for name, pid in props}
         body = f"""<div class="oc-scroll">
         <table class="oc-grid" style="{_table_style(len(days))}">{_colgroup(len(days))}
-          <thead><tr>{head}</tr></thead>
+          {_day_header(days, dow, c["free_col"])}
           <tbody>{body_rows}</tbody>
           <tfoot><tr>{foot}</tr></tfoot>
         </table>
-        {_render_timeline(props, days, by_prop, ghosts, now, c)}
+        {_render_timeline(props, days, by_prop, ghosts, now, c, dow)}
         </div>
         {_render_feed(changes, prop_names, since, now, c, mon)}"""
 
