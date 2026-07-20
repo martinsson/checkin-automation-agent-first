@@ -11,11 +11,20 @@ between two booked nights (an "orphan", the hardest to sell) gets a red ring.
 Data comes from every configured booking gateway via `stays_overlapping()` — which,
 unlike `upcoming_arrivals()`, also returns stays already in progress and owner
 blocks, so a night reads as free only when nothing actually covers it.
+
+Below the grid, two companion sections (mock: "occupancy-reservations-section"
+artifact, options D + F):
+- **Stays timeline** — same day columns, one bar per real stay (guest + channel
+  dot). Bookings created/modified in the last 48h get a ring; a cancellation
+  stays visible for 48h as a dashed ghost over the nights it released, and those
+  nights get a ✦ in the grid.
+- **Changes feed** — new / modified / cancelled bookings of the last 7 days via
+  `bookings_changed_since()`, the one read that still includes cancellations.
 """
 
 import html
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -32,6 +41,9 @@ router = APIRouter()
 _DEFAULT_DAYS = 10
 _MIN_DAYS = 3
 _MAX_DAYS = 21
+_FEED_DAYS = 7        # the changes feed looks this many days back
+_RECENT_HOURS = 48    # rings / ghosts / ✦ cells highlight changes this fresh
+_FEED_MAX_ITEMS = 12
 
 # Weekday / month abbreviations per language (arrays don't fit the flat i18n
 # string table, so the page's localisation lives here alongside its plural rules).
@@ -67,6 +79,23 @@ def _copy(lang: str) -> dict:
             "no_properties": "Aucun logement configuré.",
             "no_backend": "Aucun système de réservation n'est configuré sur ce serveur.",
             "load_failed": lambda src, exc: f"Impossible de charger les réservations {src} : {exc}",
+            "legend_fresh": "✦ Libérée récemment (annulation)",
+            "stays_title": "Séjours",
+            "changes_title": lambda d: f"Changements — {d} derniers jours",
+            "badge_new": "Nouveau",
+            "badge_cancel": "Annulé",
+            "badge_mod": "Modifié",
+            "tag_new": "nouv.",
+            "tag_mod": "modif.",
+            "blocked": "Bloqué",
+            "nights": lambda n: f'{n} nuit{"s" if n != 1 else ""}',
+            "reopen": lambda n, rng: (
+                f'✦ {n} nuit{"s" if n != 1 else ""} remise{"s" if n != 1 else ""} en vente · {rng}'
+            ),
+            "no_changes": lambda d: f"Aucun changement depuis {d} jours.",
+            "when_min": lambda m: f"il y a {m} min",
+            "when_h": lambda h: f"il y a {h} h",
+            "when_yesterday": "hier",
         }
     return {
         "title": "Free nights",
@@ -85,6 +114,23 @@ def _copy(lang: str) -> dict:
         "no_properties": "No properties configured.",
         "no_backend": "No booking backend is configured on this server.",
         "load_failed": lambda src, exc: f"Could not load {src} bookings: {exc}",
+        "legend_fresh": "✦ Freed recently (cancellation)",
+        "stays_title": "Stays",
+        "changes_title": lambda d: f"Changes — last {d} days",
+        "badge_new": "New",
+        "badge_cancel": "Cancelled",
+        "badge_mod": "Modified",
+        "tag_new": "new",
+        "tag_mod": "mod.",
+        "blocked": "Blocked",
+        "nights": lambda n: f'{n} night{"s" if n != 1 else ""}',
+        "reopen": lambda n, rng: (
+            f'✦ {n} night{"s" if n != 1 else ""} back on sale · {rng}'
+        ),
+        "no_changes": lambda d: f"No changes in the last {d} days.",
+        "when_min": lambda m: f"{m} min ago",
+        "when_h": lambda h: f"{h} h ago",
+        "when_yesterday": "yesterday",
     }
 
 # Grid styling. Scoped `oc-` classes so nothing collides with the shared design
@@ -109,7 +155,11 @@ _STYLE = """
   .oc-range a.on { background: #eaf3ee; border-radius: 6px; }
 
   .oc-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table.oc-grid { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  /* Fixed layout + a shared <colgroup> keep the grid and the stays timeline on
+     the exact same day columns (both tables live in the same scroll container). */
+  table.oc-grid { border-collapse: collapse; width: 100%; font-size: 0.8rem; table-layout: fixed; }
+  table.oc-grid col.c-prop { width: 7.5rem; }
+  table.oc-grid col.c-tot { width: 2.9rem; }
   table.oc-grid th, table.oc-grid td { text-align: center; padding: 0; }
   table.oc-grid thead th {
     font-weight: 600; color: #6b7280; padding: 0.25rem 0.15rem 0.5rem;
@@ -126,7 +176,7 @@ _STYLE = """
     padding: 0 0.7rem 0 0.15rem; position: sticky; left: 0; background: #fff; z-index: 1;
   }
   table.oc-grid th.tot-h { color: #6b7280; padding-left: 0.4rem; }
-  table.oc-grid td.cell { border: 1px solid #e3e9ec; height: 2.35rem; position: relative; min-width: 2rem; }
+  table.oc-grid td.cell { border: 1px solid #e3e9ec; height: 2.35rem; position: relative; }
   table.oc-grid td.booked { background: #eef2f3; }
   table.oc-grid td.booked::after {
     content: ""; position: absolute; inset: 0;
@@ -152,6 +202,79 @@ _STYLE = """
   table.oc-grid tfoot td.z { color: #9aa5ac; font-weight: 500; }
 
   .oc-empty { text-align: center; color: #6b7280; margin: 1.5rem 0; }
+
+  /* freshly-freed night (cancellation < 48h) */
+  table.oc-grid td.fresh { box-shadow: inset 0 0 0 2px rgba(246,168,33,0.8); }
+  table.oc-grid td.fresh::before {
+    content: "✦"; position: absolute; top: -0.05rem; right: 0.1rem;
+    font-size: 0.6rem; color: #8a5a00; z-index: 2;
+  }
+  table.oc-grid td.orphan.fresh { box-shadow: inset 0 0 0 2px #d24b4b; }
+
+  .oc-sect {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em;
+    font-weight: 700; color: #9aa5ac; margin: 1.6rem 0 0.7rem;
+    position: sticky; left: 0; /* stays put when the scroll container pans */
+  }
+
+  /* channel dot */
+  .oc-ch { width: 0.55rem; height: 0.55rem; border-radius: 50%; display: inline-block; flex: none; background: #9aa5ac; }
+  .oc-ch.airbnb { background: #ff5a5f; }
+  .oc-ch.booking { background: #4a7fc1; }
+  .oc-ch.direct { background: #2d6a4f; }
+
+  /* stays timeline (a second table on the grid's colgroup → same day columns) */
+  table.oc-tl th.prop { font-size: 0.82rem; }
+  table.oc-tl td.tl-td { padding: 0; }
+  table.oc-tl tr + tr th, table.oc-tl tr + tr td { border-top: 1px solid #e3e9ec; }
+  .oc-tl-track { position: relative; height: 2.3rem; background: #fff2d6; }
+  .oc-tl-track .lines { position: absolute; inset: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .oc-tl-track .lines i { border-left: 1px solid rgba(246,168,33,0.25); }
+  .oc-tl-track .lines i.today { box-shadow: inset 1px 0 0 #2d6a4f; }
+  .oc-tl-bar {
+    position: absolute; top: 0.32rem; height: 1.66rem; border-radius: 6px;
+    background: #c4d0d4; color: #55656c; font-size: 0.7rem; font-weight: 600;
+    display: flex; align-items: center; gap: 0.35rem; padding: 0 0.5rem;
+    overflow: hidden; white-space: nowrap;
+  }
+  .oc-tl-bar .n { overflow: hidden; text-overflow: ellipsis; }
+  .oc-tl-bar .tag { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+  .oc-tl-bar.is-new { box-shadow: 0 0 0 2px #2d6a4f; color: #1a1a1a; }
+  .oc-tl-bar.is-new .tag { color: #2d6a4f; }
+  .oc-tl-bar.is-mod { box-shadow: 0 0 0 2px #1e3a5f; }
+  .oc-tl-bar.is-mod .tag { color: #1e3a5f; }
+  .oc-tl-ghost {
+    position: absolute; top: 0.32rem; height: 1.66rem; border-radius: 6px;
+    border: 2px dashed #d24b4b; color: #d24b4b; font-size: 0.66rem; font-weight: 700;
+    display: flex; align-items: center; padding: 0 0.45rem; white-space: nowrap;
+    overflow: hidden; background: transparent;
+  }
+
+  /* changes feed */
+  .oc-feed { }
+  .oc-ev { display: flex; gap: 0.7rem; padding: 0.65rem 0.2rem; align-items: flex-start; }
+  .oc-ev + .oc-ev { border-top: 1px solid #e3e9ec; }
+  .oc-badge {
+    flex: none; font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.06em; border-radius: 6px; padding: 0.18rem 0.5rem;
+    margin-top: 0.15rem; min-width: 4.6rem; text-align: center;
+  }
+  .oc-badge.new { background: #eaf3ee; color: #2d6a4f; }
+  .oc-badge.cancel { background: #fdecea; color: #b3261e; }
+  .oc-badge.mod { background: #e8eef6; color: #1e3a5f; }
+  .oc-ev-body { flex: 1; min-width: 0; }
+  .oc-ev-l1 { font-size: 0.88rem; display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+  .oc-ev-l1 .who { font-weight: 650; }
+  .oc-ev-l1 .where { color: #5a6b73; }
+  .oc-ev-l2 { font-size: 0.8rem; color: #5a6b73; font-variant-numeric: tabular-nums; margin-top: 0.1rem; }
+  .oc-ev-l2 s { color: #9aa5ac; }
+  .oc-reopen {
+    display: inline-block; margin-top: 0.3rem; font-size: 0.76rem; font-weight: 700;
+    color: #8a5a00; background: #fff2d6; border: 1px solid #f6a821;
+    border-radius: 8px; padding: 0.12rem 0.55rem;
+  }
+  .oc-ev-when { flex: none; font-size: 0.72rem; color: #9aa5ac; margin-top: 0.25rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .oc-nochanges { font-size: 0.82rem; color: #9aa5ac; font-style: italic; margin: 0.2rem 0 0; }
 </style>
 """
 
@@ -214,13 +337,262 @@ def _build_grid(props, days, by_prop):
     return rows, per_day_free, grand
 
 
-def _render(props, days, by_prop, window_days: int, lang: str, note: str = "") -> str:
+def _parse_dt(s: str) -> datetime | None:
+    """Lenient provider-timestamp parser: ISO with T or space, optional Z/offset.
+    Returns a naive local datetime, or None when absent/unparseable."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    if " " in s and "T" not in s:
+        s = s.replace(" ", "T", 1)
+    s = s.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
+def _parse_date(s: str) -> date | None:
+    try:
+        return date.fromisoformat((s or "").strip())
+    except ValueError:
+        return None
+
+
+def _channel_class(channel: str) -> str:
+    """CSS class for the channel dot: airbnb / booking / direct / (grey) other."""
+    c = (channel or "").lower()
+    if "airbnb" in c:
+        return "airbnb"
+    if "booking" in c:
+        return "booking"
+    if not c or "direct" in c or "beds24" in c or "smoobu" in c or "homepage" in c:
+        return "direct"
+    return "other"
+
+
+_CANCELLED_STATUSES = {"cancelled"}
+_BLOCK_STATUSES = {"black", "block"}
+
+
+def _change_kind(r: Reservation, since: datetime) -> str:
+    """cancel / new / mod — cancelled wins; else "new" when the booking itself
+    was created inside the feed window, otherwise it's a modification."""
+    if r.status in _CANCELLED_STATUSES:
+        return "cancel"
+    bt = _parse_dt(r.booking_time)
+    if bt is not None and bt >= since:
+        return "new"
+    return "mod"
+
+
+def _nights(r: Reservation) -> int:
+    a, d = _parse_date(r.arrival), _parse_date(r.departure)
+    return max(0, (d - a).days) if a and d else 0
+
+
+def _range_label(r: Reservation, mon: list[str]) -> str:
+    a, d = _parse_date(r.arrival), _parse_date(r.departure)
+    if not a or not d:
+        return f"{r.arrival}–{r.departure}"
+    if a.month == d.month:
+        return f"{a.day}–{d.day} {mon[a.month]}"
+    return f"{a.day} {mon[a.month]} – {d.day} {mon[d.month]}"
+
+
+def _when_label(dt: datetime | None, now: datetime, c: dict, mon: list[str]) -> str:
+    if dt is None:
+        return ""
+    delta = now - dt
+    if delta < timedelta(hours=1):
+        return c["when_min"](max(1, int(delta.total_seconds() // 60)))
+    if delta < timedelta(hours=24) and dt.date() == now.date():
+        return c["when_h"](int(delta.total_seconds() // 3600))
+    if dt.date() == now.date() - timedelta(days=1):
+        return c["when_yesterday"]
+    return f"{dt.day} {mon[dt.month]}"
+
+
+def _recent_cancellations(changes: list[Reservation], now: datetime) -> list[Reservation]:
+    """Cancellations fresh enough (< _RECENT_HOURS) to ghost in the timeline and
+    ✦-mark the nights they released."""
+    cutoff = now - timedelta(hours=_RECENT_HOURS)
+    out = []
+    for r in changes:
+        if r.status not in _CANCELLED_STATUSES:
+            continue
+        ts = _parse_dt(r.modified_time) or _parse_dt(r.booking_time)
+        if ts is not None and ts >= cutoff:
+            out.append(r)
+    return out
+
+
+def _fresh_cells(cancels: list[Reservation], days: list[date]) -> set[tuple[int, str]]:
+    """(property_id, night-iso) pairs inside the window released by a recent
+    cancellation. The caller only marks them when the night still reads as free
+    — a re-booked night stays a plain booked cell."""
+    out: set[tuple[int, str]] = set()
+    for r in cancels:
+        a, d = _parse_date(r.arrival), _parse_date(r.departure)
+        if not a or not d:
+            continue
+        for day in days:
+            if a <= day < d:
+                out.add((r.property_id, day.isoformat()))
+    return out
+
+
+def _bar_span(r: Reservation, days: list[date]) -> tuple[float, float] | None:
+    """(left%, width%) of a stay across the day window, clamped; None if outside."""
+    n = len(days)
+    a, d = _parse_date(r.arrival), _parse_date(r.departure)
+    if not a or not d or n == 0:
+        return None
+    s_idx = max(0, (a - days[0]).days)
+    e_idx = min(n, (d - days[0]).days)
+    if e_idx <= s_idx or s_idx >= n:
+        return None
+    return (s_idx / n * 100, (e_idx - s_idx) / n * 100)
+
+
+def _colgroup(n_days: int) -> str:
+    """Shared column skeleton: property | n day columns | totals. Both the grid
+    and the stays timeline use it (with table-layout: fixed) so their day
+    columns align to the pixel."""
+    return '<colgroup><col class="c-prop">' + "<col>" * n_days + '<col class="c-tot"></colgroup>'
+
+
+def _table_style(n_days: int) -> str:
+    """min-width so fixed-layout day columns never squeeze below ~2.2rem each."""
+    return f"min-width:{10.4 + n_days * 2.2:.1f}rem"
+
+
+def _render_timeline(props, days, by_prop, ghosts, now: datetime, c: dict) -> str:
+    """Option D: one track per property, same day columns as the grid. Stays are
+    grey bars (guest + channel dot); < 48h-old creations/modifications get a
+    ring, fresh cancellations a dashed ghost over the nights they released."""
     today = date.today()
+    cutoff = now - timedelta(hours=_RECENT_HOURS)
+    lines = "".join(
+        f'<i class="{"today" if d == today else ""}"></i>' for d in days
+    )
+    rows = ""
+    for name, pid in props:
+        bars = ""
+        for g in ghosts:
+            if g.property_id != pid:
+                continue
+            span = _bar_span(g, days)
+            if span is None:
+                continue
+            gname = html.escape(g.guest_name or c["blocked"])
+            bars += (
+                f'<div class="oc-tl-ghost" style="left:{span[0]:.3f}%;'
+                f'width:calc({span[1]:.3f}% - 2px)">{gname} ✕</div>'
+            )
+        for r in sorted(by_prop.get(pid, []), key=lambda r: r.arrival):
+            span = _bar_span(r, days)
+            if span is None:
+                continue
+            is_block = r.status in _BLOCK_STATUSES
+            bt, mt = _parse_dt(r.booking_time), _parse_dt(r.modified_time)
+            is_new = not is_block and bt is not None and bt >= cutoff
+            is_mod = not is_block and not is_new and mt is not None and mt >= cutoff
+            cls = "oc-tl-bar" + (" is-new" if is_new else "") + (" is-mod" if is_mod else "")
+            label = html.escape(r.guest_name) if not is_block else html.escape(c["blocked"])
+            dot = "" if is_block else f'<span class="oc-ch {_channel_class(r.channel)}"></span>'
+            tag = ""
+            if is_new:
+                tag = f'<span class="tag">{html.escape(c["tag_new"])}</span>'
+            elif is_mod:
+                tag = f'<span class="tag">{html.escape(c["tag_mod"])}</span>'
+            bars += (
+                f'<div class="{cls}" style="left:{span[0]:.3f}%;'
+                f'width:calc({span[1]:.3f}% - 2px)">{dot}<span class="n">{label}</span>{tag}</div>'
+            )
+        rows += (
+            f'<tr><th class="prop">{html.escape(name)}</th>'
+            f'<td class="tl-td" colspan="{len(days)}"><div class="oc-tl-track">'
+            f'<div class="lines">{lines}</div>{bars}</div></td><td></td></tr>'
+        )
+    return (
+        f'<p class="oc-sect">{html.escape(c["stays_title"])}</p>'
+        f'<table class="oc-grid oc-tl" style="{_table_style(len(days))}">'
+        f"{_colgroup(len(days))}<tbody>{rows}</tbody></table>"
+    )
+
+
+def _render_feed(changes, prop_names: dict[int, str], since: datetime, now: datetime,
+                 c: dict, mon: list[str]) -> str:
+    """Option F: new / modified / cancelled bookings of the feed window, newest
+    first. A cancellation carries the amber "nights back on sale" chip that
+    matches the ✦ cells in the grid."""
+    today = date.today()
+    items = []
+    for r in changes:
+        if r.status in _BLOCK_STATUSES:
+            continue  # owner blocks aren't guest-booking news
+        dep = _parse_date(r.departure)
+        if dep is None or dep < today:
+            continue  # changes to already-departed stays aren't actionable
+        ts = _parse_dt(r.modified_time) or _parse_dt(r.booking_time)
+        items.append((ts or datetime.min, r))
+    items.sort(key=lambda t: t[0], reverse=True)
+
+    rows = ""
+    for ts, r in items[:_FEED_MAX_ITEMS]:
+        kind = _change_kind(r, since)
+        badge_cls = {"new": "new", "cancel": "cancel", "mod": "mod"}[kind]
+        badge_lbl = {"new": c["badge_new"], "cancel": c["badge_cancel"], "mod": c["badge_mod"]}[kind]
+        rng, nn = _range_label(r, mon), _nights(r)
+        line = f"{rng} · {c['nights'](nn)}"
+        if r.price > 0:
+            line += f" · {r.price:.0f} €"
+        chip = ""
+        if kind == "cancel":
+            line = f"<s>{line}</s>"
+            a = _parse_date(r.arrival)
+            resale = _nights(r)
+            if a is not None and a < today:  # only the nights still ahead reopen
+                dep = _parse_date(r.departure)
+                resale = max(0, (dep - today).days) if dep else 0
+            if resale > 0:
+                chip = f'<span class="oc-reopen">{html.escape(c["reopen"](resale, rng))}</span>'
+        where = html.escape(prop_names.get(r.property_id, str(r.property_id)))
+        who = html.escape(r.guest_name or c["blocked"])
+        when = html.escape(_when_label(None if ts == datetime.min else ts, now, c, mon))
+        rows += (
+            f'<div class="oc-ev"><span class="oc-badge {badge_cls}">{html.escape(badge_lbl)}</span>'
+            f'<div class="oc-ev-body"><div class="oc-ev-l1">'
+            f'<span class="oc-ch {_channel_class(r.channel)}"></span>'
+            f'<span class="who">{who}</span><span class="where">{where}</span></div>'
+            f'<div class="oc-ev-l2">{line}</div>{chip}</div>'
+            f'<span class="oc-ev-when">{when}</span></div>'
+        )
+    if not rows:
+        rows = f'<p class="oc-nochanges">{html.escape(c["no_changes"](_FEED_DAYS))}</p>'
+    return (
+        f'<p class="oc-sect">{html.escape(c["changes_title"](_FEED_DAYS))}</p>'
+        f'<div class="oc-feed">{rows}</div>'
+    )
+
+
+def _render(props, days, by_prop, window_days: int, lang: str, note: str = "",
+            changes: list[Reservation] | None = None) -> str:
+    today = date.today()
+    now = datetime.now()
     c = _copy(lang)
     t = Translator(lang)  # shared nav strings
     dow, mon = _DOW.get(lang, _DOW["en"]), _MON.get(lang, _MON["en"])
     rows, per_day_free, grand = _build_grid(props, days, by_prop)
     orphan_total = sum(1 for _, cells, _ in rows for _free, orphan in cells if orphan)
+
+    changes = changes or []
+    ghosts = _recent_cancellations(changes, now)
+    fresh = _fresh_cells(ghosts, days)
 
     note_html = f'<p class="hint" style="text-align:center">{html.escape(note)}</p>' if note else ""
 
@@ -240,14 +612,16 @@ def _render(props, days, by_prop, window_days: int, lang: str, note: str = "") -
             )
         head += f'<th class="tot-h">{c["free_col"]}</th>'
 
-        # Property rows
+        # Property rows (rows come out of _build_grid in props order, so zip is safe)
         body_rows = ""
-        for name, cells, free_count in rows:
+        for (name, cells, free_count), (_pname, pid) in zip(rows, props):
             tds = f'<th class="prop">{html.escape(name)}</th>'
             for i, (free, orphan) in enumerate(cells):
                 cls = ["cell", "free" if free else "booked"]
                 if orphan:
                     cls.append("orphan")
+                if free and (pid, days[i].isoformat()) in fresh:
+                    cls.append("fresh")
                 if days[i] == today:
                     cls.append("today-col")
                 dot = '<span class="dot"></span>' if free else ""
@@ -262,11 +636,17 @@ def _render(props, days, by_prop, window_days: int, lang: str, note: str = "") -
             foot += f'<td class="{"z" if cnt == 0 else ""}">{cnt}</td>'
         foot += f"<td>{grand}</td>"
 
-        body = f"""<div class="oc-scroll"><table class="oc-grid">
+        since = now - timedelta(days=_FEED_DAYS)
+        prop_names = {pid: name for name, pid in props}
+        body = f"""<div class="oc-scroll">
+        <table class="oc-grid" style="{_table_style(len(days))}">{_colgroup(len(days))}
           <thead><tr>{head}</tr></thead>
           <tbody>{body_rows}</tbody>
           <tfoot><tr>{foot}</tr></tfoot>
-        </table></div>"""
+        </table>
+        {_render_timeline(props, days, by_prop, ghosts, now, c)}
+        </div>
+        {_render_feed(changes, prop_names, since, now, c, mon)}"""
 
     # Range switcher
     def _range_link(nd: int) -> str:
@@ -290,6 +670,7 @@ def _render(props, days, by_prop, window_days: int, lang: str, note: str = "") -
       <span><i class="oc-sw free"></i> {html.escape(c["legend_free"])}</span>
       <span><i class="oc-sw orphan"></i> {html.escape(c["legend_orphan"])}</span>
       <span><i class="oc-sw booked"></i> {html.escape(c["legend_booked"])}</span>
+      {f'<span>{html.escape(c["legend_fresh"])}</span>' if fresh else ''}
     </div>
     <div class="oc-range">{range_html}</div>
     {note_html}
@@ -318,9 +699,11 @@ async def occupancy(request: Request):
     props = _property_list(gateways)
 
     by_prop: dict[int, list[Reservation]] = {}
+    changes: list[Reservation] = []
     notes: list[str] = []
     if not gateways:
         notes.append(c["no_backend"])
+    since = datetime.now() - timedelta(days=_FEED_DAYS)
     for source, gw in gateways.items():
         try:
             for r in await gw.stays_overlapping(start, end):
@@ -330,5 +713,14 @@ async def occupancy(request: Request):
             notes.append(c["load_failed"](source, exc))
         except NotImplementedError:
             log.warning("%s gateway does not support stays_overlapping", source)
+        try:
+            changes.extend(await gw.bookings_changed_since(since))
+        except BookingGatewayError as exc:
+            log.error("Loading %s changes failed: %s", source, exc)
+            notes.append(c["load_failed"](source, exc))
+        except NotImplementedError:
+            log.warning("%s gateway does not support bookings_changed_since", source)
 
-    return HTMLResponse(_render(props, days, by_prop, window_days, lang, note=" ".join(notes)))
+    return HTMLResponse(
+        _render(props, days, by_prop, window_days, lang, note=" ".join(notes), changes=changes)
+    )

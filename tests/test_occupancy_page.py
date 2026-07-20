@@ -16,10 +16,11 @@ from src.web.occupancy import _build_grid
 
 
 class FakeOverlapGateway(GuestBookingGateway):
-    def __init__(self, reservations=None, fail=False, managed=None):
+    def __init__(self, reservations=None, fail=False, managed=None, changes=None):
         self._res = reservations or []
         self._fail = fail
         self._managed = managed or []
+        self._changes = changes
 
     async def upcoming_arrivals(self, days: int):
         return list(self._res)
@@ -28,6 +29,11 @@ class FakeOverlapGateway(GuestBookingGateway):
         if self._fail:
             raise BookingGatewayError("boom")
         return list(self._res)
+
+    async def bookings_changed_since(self, since):
+        if self._changes is None:
+            raise NotImplementedError  # like a gateway without change support
+        return list(self._changes)
 
     async def send_guest_message(self, booking_id: int, message: str) -> None:
         pass
@@ -161,3 +167,99 @@ def test_requires_auth():
     client.cookies.clear()
     resp = client.get("/occupancy", follow_redirects=False)
     assert resp.status_code in (302, 303, 307)  # redirected to login
+
+
+# --- stays timeline + changes feed (options D + F) --------------------------
+
+from datetime import date as _date, datetime as _dt, timedelta as _td
+
+from src.web.occupancy import _change_kind, _fresh_cells
+
+
+def _iso(days_from_now: int) -> str:
+    return (_date.today() + _td(days=days_from_now)).isoformat()
+
+
+def _ts(hours_ago: int) -> str:
+    return (_dt.now() - _td(hours=hours_ago)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_change_kind_classification():
+    since = _dt.now() - _td(days=7)
+    cancelled = Reservation(booking_id=1, property_id=1, guest_name="A",
+                            arrival=_iso(3), departure=_iso(6), status="cancelled",
+                            booking_time=_ts(3))
+    created_in_window = Reservation(booking_id=2, property_id=1, guest_name="B",
+                                    arrival=_iso(3), departure=_iso(6), status="confirmed",
+                                    booking_time=_ts(5))
+    old_but_touched = Reservation(booking_id=3, property_id=1, guest_name="C",
+                                  arrival=_iso(3), departure=_iso(6), status="confirmed",
+                                  booking_time="2025-01-01T10:00:00", modified_time=_ts(5))
+    assert _change_kind(cancelled, since) == "cancel"
+    assert _change_kind(created_in_window, since) == "new"
+    assert _change_kind(old_but_touched, since) == "mod"
+
+
+def test_fresh_cells_cover_the_released_nights_only():
+    days = [(_date.today() + _td(days=i)) for i in range(5)]
+    ghost = Reservation(booking_id=9, property_id=100, guest_name="Gone",
+                        arrival=_iso(1), departure=_iso(3), status="cancelled",
+                        modified_time=_ts(2))
+    cells = _fresh_cells([ghost], days)
+    assert cells == {(100, _iso(1)), (100, _iso(2))}  # nights 1 & 2, not departure day
+
+
+def test_page_shows_stays_timeline_with_guest_names():
+    res = [
+        Reservation(booking_id=1, property_id=326275, guest_name="Klein",
+                    arrival=_iso(0), departure=_iso(2), channel="airbnb", status="confirmed"),
+    ]
+    client = _make_client(gateway=FakeOverlapGateway(res, changes=[]))
+    resp = client.get("/occupancy")
+    assert resp.status_code == 200
+    assert "Stays" in resp.text
+    assert "Klein" in resp.text            # bar carries the guest name
+    assert "oc-tl-bar" in resp.text
+    assert "oc-ch airbnb" in resp.text     # channel dot
+
+
+def test_recent_cancellation_shows_ghost_feed_entry_and_fresh_cells():
+    ghost = Reservation(booking_id=9, property_id=326123, guest_name="Rossi",
+                        arrival=_iso(2), departure=_iso(5), channel="booking",
+                        status="cancelled", booking_time="2026-06-01T10:00:00",
+                        modified_time=_ts(3), price=285.0)
+    client = _make_client(gateway=FakeOverlapGateway([], changes=[ghost]))
+    client.cookies.set("lang", "fr")
+    resp = client.get("/occupancy")
+    assert resp.status_code == 200
+    assert "Annulé" in resp.text                 # feed badge
+    assert "oc-tl-ghost" in resp.text            # dashed ghost bar in the timeline
+    assert "remise" in resp.text                 # "nuits remises en vente" chip
+    assert 'class="cell free fresh' in resp.text  # ✦ cells in the grid
+    assert "Libérée récemment" in resp.text      # legend entry appears
+
+
+def test_new_booking_gets_ring_and_feed_entry():
+    fresh_booking = Reservation(booking_id=5, property_id=328510, guest_name="Novak",
+                                arrival=_iso(3), departure=_iso(6), channel="airbnb",
+                                status="confirmed", booking_time=_ts(4), price=412.0)
+    client = _make_client(gateway=FakeOverlapGateway([fresh_booking], changes=[fresh_booking]))
+    resp = client.get("/occupancy")
+    assert resp.status_code == 200
+    assert "is-new" in resp.text     # ring on the timeline bar
+    assert ">New<" in resp.text      # feed badge
+    assert "412" in resp.text        # price shown in the feed line
+
+
+def test_quiet_week_renders_empty_feed_note():
+    client = _make_client(gateway=FakeOverlapGateway([], changes=[]))
+    resp = client.get("/occupancy")
+    assert resp.status_code == 200
+    assert "No changes in the last" in resp.text
+
+
+def test_gateway_without_change_support_still_renders():
+    client = _make_client(gateway=FakeOverlapGateway([]))  # changes=None -> NotImplementedError
+    resp = client.get("/occupancy")
+    assert resp.status_code == 200
+    assert "Free nights" in resp.text

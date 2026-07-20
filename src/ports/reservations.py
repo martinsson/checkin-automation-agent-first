@@ -7,7 +7,7 @@ Backed in production by Beds24 (src/adapters/beds24_bookings.py).
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 # Booking sources. A source is both a Reservation.source value AND the key under
 # which the matching gateway is registered (see src/web/early_checkin.py), so a
@@ -29,6 +29,11 @@ class Reservation:
     status: str = ""
     language: str = ""  # guest's preferred language code, e.g. "fr" / "en"
     source: str = SOURCE_BEDS24  # which PMS owns this booking — routes the message send
+    # Change tracking (occupancy page's stays/changes sections). Provider-native
+    # datetime strings, parsed leniently by the caller; empty when unknown.
+    booking_time: str = ""   # when the booking was created
+    modified_time: str = ""  # when it was last modified (cancellation included)
+    price: float = 0.0       # total price in the account currency, 0 if unknown
 
 
 class BookingGatewayError(Exception):
@@ -58,6 +63,19 @@ class GuestBookingGateway(ABC):
 
         Optional: the default raises NotImplementedError so a gateway that only
         supports arrival listing (e.g. a test fake) need not implement it.
+        """
+        raise NotImplementedError
+
+    async def bookings_changed_since(self, since: datetime) -> list[Reservation]:
+        """
+        Bookings created, modified or **cancelled** since `since` — the one read
+        that includes cancellations, which every other listing drops. Powers the
+        occupancy page's "what changed" feed and its cancelled-stay ghosts; the
+        caller classifies each item (new / modified / cancelled) from
+        booking_time / modified_time / status. Raises BookingGatewayError on
+        failure.
+
+        Optional, like stays_overlapping: the default raises NotImplementedError.
         """
         raise NotImplementedError
 

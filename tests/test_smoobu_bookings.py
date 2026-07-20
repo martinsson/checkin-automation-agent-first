@@ -128,3 +128,44 @@ def test_stays_overlapping_keeps_blocks_and_filters_by_window(monkeypatch):
     assert len(res) == 2
     block = next(r for r in res if r.booking_id == 999)
     assert block.status == "block" and block.guest_name == "Blocked"
+
+
+def test_bookings_changed_since_includes_cancellations(monkeypatch):
+    from datetime import datetime
+
+    seen = {}
+    body = {
+        "page_count": 1,
+        "bookings": [
+            {
+                "id": 777,
+                "type": "cancellation",
+                "arrival": "2026-07-23",
+                "departure": "2026-07-26",
+                "apartment": {"id": APT_ID, "name": "L'Hippocrate"},
+                "channel": {"id": 2, "name": "Booking.com"},
+                "guest-name": "Paolo Rossi",
+                "created-at": "2026-07-01 10:00",
+                "price": 285,
+                "is-blocked-booking": False,
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=body)
+
+    _install_transport(monkeypatch, handler)
+    gw = SmoobuBookingGateway(api_key="k", apartment_id=APT_ID)
+    res = asyncio.run(gw.bookings_changed_since(datetime(2026, 7, 13, 8, 30)))
+
+    # Cancellations must be requested (Smoobu drops them by default) and the
+    # filter is date-granular.
+    assert seen["params"]["showCancellation"] == "true"
+    assert seen["params"]["modifiedFrom"] == "2026-07-13"
+    assert len(res) == 1
+    r = res[0]
+    assert r.status == "cancelled"  # type "cancellation" normalised to status
+    assert r.booking_time == "2026-07-01 10:00"
+    assert r.price == 285.0
