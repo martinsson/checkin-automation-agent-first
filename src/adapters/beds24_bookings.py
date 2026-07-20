@@ -9,7 +9,7 @@ beds24-messaging skill for the auth model and the /bookings/messages contract.
 
 import logging
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -28,6 +28,9 @@ _LIVE_STATUSES = {"confirmed", "new", "request"}
 # For occupancy, a night is "not free" if a guest holds it OR the owner blocked
 # it — Beds24 stores availability blocks as bookings with status "black".
 _OCCUPYING_STATUSES = _LIVE_STATUSES | {"black"}
+# For the "what changed" feed: everything that holds (or held) nights, plus the
+# cancellations every other listing drops.
+_CHANGE_STATUSES = _OCCUPYING_STATUSES | {"cancelled"}
 
 
 def _to_reservation(b: dict) -> Reservation:
@@ -45,6 +48,9 @@ def _to_reservation(b: dict) -> Reservation:
         status=b.get("status", "") or "",
         language=(b.get("lang") or "").strip().lower(),
         source=SOURCE_BEDS24,
+        booking_time=(b.get("bookingTime") or "").strip(),
+        modified_time=(b.get("modifiedTime") or "").strip(),
+        price=float(b.get("price") or 0),
     )
 
 
@@ -117,6 +123,32 @@ class Beds24BookingGateway(GuestBookingGateway):
         data = resp.json().get("data", []) or []
         out = [_to_reservation(b) for b in data if b.get("status") in _OCCUPYING_STATUSES]
         out.sort(key=lambda r: r.arrival)
+        return out
+
+    async def bookings_changed_since(self, since: datetime) -> list[Reservation]:
+        """Bookings created/modified/cancelled since `since` — includes the
+        cancellations stays_overlapping drops, for the occupancy change feed.
+        Beds24's modifiedFrom expects "YYYY-MM-DD HH:MM:SS" (server time)."""
+        params = {
+            "modifiedFrom": since.strftime("%Y-%m-%d %H:%M:%S"),
+            "status": list(_CHANGE_STATUSES),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{_BASE}/bookings",
+                    params=params,
+                    headers={"token": self._read_token, "accept": "application/json"},
+                )
+        except httpx.HTTPError as exc:
+            raise BookingGatewayError(f"Beds24 bookings request failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise BookingGatewayError(
+                f"Beds24 bookings returned HTTP {resp.status_code}: {resp.text[:200]}"
+            )
+        data = resp.json().get("data", []) or []
+        out = [_to_reservation(b) for b in data if b.get("status") in _CHANGE_STATUSES]
+        out.sort(key=lambda r: r.modified_time or r.booking_time, reverse=True)
         return out
 
     async def send_guest_message(self, booking_id: int, message: str) -> None:

@@ -72,3 +72,61 @@ def test_stays_overlapping_queries_window_and_keeps_bookings_and_blocks(monkeypa
     assert ids == [501, 502]  # guest + block kept, cancelled dropped
     block = next(r for r in res if r.booking_id == 502)
     assert block.status == "black" and block.guest_name == "Blocked"
+
+
+def test_bookings_changed_since_keeps_cancellations_and_maps_timestamps(monkeypatch):
+    from datetime import datetime
+
+    seen = {}
+    body = {
+        "data": [
+            {
+                "id": 601,
+                "propertyId": 326123,
+                "firstName": "Rossi",
+                "arrival": "2026-07-23",
+                "departure": "2026-07-26",
+                "status": "cancelled",
+                "bookingTime": "2026-07-01T10:00:00Z",
+                "modifiedTime": "2026-07-19T18:42:00Z",
+                "price": 285.0,
+            },
+            {
+                "id": 602,
+                "propertyId": 328510,
+                "firstName": "Novak",
+                "arrival": "2026-07-27",
+                "departure": "2026-07-31",
+                "status": "confirmed",
+                "bookingTime": "2026-07-20T09:00:00Z",
+                "modifiedTime": "2026-07-20T09:00:00Z",
+                "price": 412.0,
+            },
+            {
+                # Inquiries aren't bookings — dropped.
+                "id": 603,
+                "propertyId": 328510,
+                "arrival": "2026-07-28",
+                "departure": "2026-07-29",
+                "status": "inquiry",
+            },
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v2/bookings"
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=body)
+
+    _install_transport(monkeypatch, handler)
+    gw = Beds24BookingGateway(read_token="read-tok")
+    res = asyncio.run(gw.bookings_changed_since(datetime(2026, 7, 13, 0, 0, 0)))
+
+    assert seen["params"]["modifiedFrom"] == "2026-07-13 00:00:00"
+    ids = sorted(r.booking_id for r in res)
+    assert ids == [601, 602]  # cancelled kept, inquiry dropped
+    cancelled = next(r for r in res if r.booking_id == 601)
+    assert cancelled.status == "cancelled"
+    assert cancelled.modified_time == "2026-07-19T18:42:00Z"
+    assert cancelled.booking_time == "2026-07-01T10:00:00Z"
+    assert cancelled.price == 285.0

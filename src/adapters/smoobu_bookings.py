@@ -11,7 +11,7 @@ same trick scripts/access_text_fetch.py already relies on.
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -67,6 +67,14 @@ class SmoobuBookingGateway(GuestBookingGateway):
             name = "Blocked"
         channel = b.get("channel")
         channel_name = channel.get("name") if isinstance(channel, dict) else (channel or "")
+        if self._is_block(b):
+            status = "block"
+        elif b.get("type") == "cancellation":
+            # Smoobu marks a cancelled booking by type, not status — normalise to
+            # the status the occupancy change feed classifies on.
+            status = "cancelled"
+        else:
+            status = str(b.get("status") or "").strip()
         return Reservation(
             booking_id=int(b["id"]),
             property_id=self._apartment_id,
@@ -74,9 +82,12 @@ class SmoobuBookingGateway(GuestBookingGateway):
             arrival=(b.get("arrival") or "").strip(),
             departure=(b.get("departure") or "").strip(),
             channel=str(channel_name or "").strip(),
-            status="block" if self._is_block(b) else str(b.get("status") or "").strip(),
+            status=status,
             language=str(b.get("language") or "").strip().lower(),
             source=SOURCE_SMOOBU,
+            booking_time=str(b.get("created-at") or "").strip(),
+            modified_time=str(b.get("modifiedAt") or b.get("modified-at") or "").strip(),
+            price=float(b.get("price") or 0),
         )
 
     async def _fetch(self, params: dict) -> list[dict]:
@@ -126,6 +137,21 @@ class SmoobuBookingGateway(GuestBookingGateway):
         )
         out = [self._to_reservation(b) for b in bookings]
         out.sort(key=lambda r: r.arrival)
+        return out
+
+    async def bookings_changed_since(self, since: datetime) -> list[Reservation]:
+        """Bookings created/modified/cancelled since `since` (cancellations are
+        kept via showCancellation). Smoobu's modifiedFrom filter is date-granular."""
+        bookings = await self._fetch(
+            {
+                "apartmentId": self._apartment_id,
+                "modifiedFrom": since.date().isoformat(),
+                "showCancellation": "true",
+                "pageSize": 100,
+            }
+        )
+        out = [self._to_reservation(b) for b in bookings]
+        out.sort(key=lambda r: r.modified_time or r.booking_time, reverse=True)
         return out
 
     async def send_guest_message(self, booking_id: int, message: str) -> None:
