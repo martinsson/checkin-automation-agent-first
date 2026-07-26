@@ -23,6 +23,8 @@ name: Deploy
 #                        not in Beds24) to the /early-checkin form.
 #   SMOOBU_APARTMENT_ID        — Smoobu apartment id for L'Hippocrate (3230512).
 #                        NB: 3052591 is Le Matisse's Smoobu listing — not this.
+#   DEPARTURE_NOTICE_COPY_TO   — email to BCC on every cleaner departure notice
+#                        (owner copy). Unset = no copy.
 #
 # The .env file itself is never rsynced by this workflow (same as `make deploy` —
 # it lives only on the server; see the Makefile header for first-time setup).
@@ -83,6 +85,7 @@ jobs:
           BEDS24_REFRESH_TOKEN: ${{ secrets.BEDS24_REFRESH_TOKEN }}
           SMOOBU_API_KEY: ${{ secrets.SMOOBU_API_KEY }}
           SMOOBU_APARTMENT_ID: ${{ secrets.SMOOBU_APARTMENT_ID }}
+          DEPARTURE_NOTICE_COPY_TO: ${{ secrets.DEPARTURE_NOTICE_COPY_TO }}
         run: |
           set -euo pipefail
           # Must match REMOTE_DIR in the Makefile.
@@ -113,6 +116,7 @@ jobs:
           upsert BEDS24_REFRESH_TOKEN "${BEDS24_REFRESH_TOKEN:-}"
           upsert SMOOBU_API_KEY "${SMOOBU_API_KEY:-}"
           upsert SMOOBU_APARTMENT_ID "${SMOOBU_APARTMENT_ID:-}"
+          upsert DEPARTURE_NOTICE_COPY_TO "${DEPARTURE_NOTICE_COPY_TO:-}"
 
       - name: Deploy
         run: make deploy SERVER=deploy-target
