@@ -58,6 +58,8 @@ def create_app() -> FastAPI:
         cleaner_email=os.environ.get("CLEANER_EMAIL", ""),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         dry_run=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"),
+        # Optional owner BCC of every departure notice; unset/blank = no copy.
+        copy_to=os.environ.get("DEPARTURE_NOTICE_COPY_TO", "").strip(),
     )
     door_lock = None
     make_webhook_url = os.environ.get("MAKE_IGLOOHOME_WEBHOOK_URL", "").strip()

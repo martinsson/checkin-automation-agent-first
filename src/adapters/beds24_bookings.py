@@ -17,6 +17,7 @@ from src.ports.reservations import (
     SOURCE_BEDS24,
     BookingGatewayError,
     GuestBookingGateway,
+    GuestMessage,
     Reservation,
 )
 
@@ -96,6 +97,48 @@ class Beds24BookingGateway(GuestBookingGateway):
         if not data:
             return None
         return _to_reservation(data[0])
+
+    async def get_recent_messages(
+        self, booking_id: int, limit: int = 10
+    ) -> list[GuestMessage]:
+        """Last `limit` messages of a booking's channel thread, oldest→newest.
+
+        Uses the dedicated `GET /bookings/messages` endpoint (the
+        `?includeMessages=true` flag on `/bookings` is empirically unreliable —
+        see the beds24-messaging skill). Only channel bookings (Airbnb/
+        Booking.com) expose a thread here; direct-booking email sends do not, so
+        this returns [] for them and the caller falls back to the webhook text.
+        `read:bookings` scope is enough. Returns [] on any read failure — the
+        departure notice must still go out."""
+        params = {"bookingId": [int(booking_id)], "maxResults": 100}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{_BASE}/bookings/messages",
+                    params=params,
+                    headers={"token": self._read_token, "accept": "application/json"},
+                )
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.warning("Beds24 messages read failed for booking %s — %s", booking_id, exc)
+            return []
+
+        rows = resp.json().get("data", []) or []
+        messages = []
+        for m in rows:
+            text = str(m.get("message") or "").strip()
+            if not text:
+                continue
+            source = str(m.get("source") or "").strip().lower()
+            messages.append(
+                GuestMessage(
+                    time=str(m.get("time") or "").strip(),
+                    author="guest" if source == "guest" else ("host" if source else ""),
+                    text=text,
+                )
+            )
+        messages.sort(key=lambda gm: gm.time)  # provider time strings sort chronologically
+        return messages[-limit:] if limit else messages
 
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         today = date.today()

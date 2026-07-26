@@ -7,10 +7,11 @@ Real SqliteRequestMemory (in-memory) for dedup + event log; everything else stub
 
 from src.adapters.sqlite_memory import SqliteRequestMemory
 from src.config.cleaner_map import CleanerContact, CleanerMap
+from src.config.property_map import PropertyMap
 from src.departure.service import DepartureNotificationService, DeparturePayload
 from src.departure.summarizer import DepartureSummary
 from src.ports.cleaner import CleanerNotifier, DepartureNotice
-from src.ports.reservations import BookingGatewayError, Reservation
+from src.ports.reservations import BookingGatewayError, GuestMessage, Reservation
 
 
 # -- stubs -------------------------------------------------------------------
@@ -46,10 +47,14 @@ class _StubSummarizer:
 
 
 class _StubGateway:
-    def __init__(self, booking=None, error=None):
+    def __init__(self, booking=None, error=None, messages=None):
         self._booking = booking
         self._error = error
+        self._messages = messages or []
         self.calls = []
+
+    async def get_recent_messages(self, booking_id, limit=10):
+        return self._messages[-limit:] if limit else list(self._messages)
 
     async def get_booking(self, booking_id):
         self.calls.append(booking_id)
@@ -78,7 +83,9 @@ def _summary(**kw):
 
 def _map():
     return CleanerMap(
-        contacts={328510: CleanerContact(name="V-Clean", email="vclean@example.com")},
+        assignments={"Le Fernand": "v_clean"},
+        cleaners={"v_clean": CleanerContact(name="V-Clean", email="vclean@example.com")},
+        property_map=PropertyMap({"Le Fernand": 328510}),
         default_email="fallback@example.com",
     )
 
@@ -120,16 +127,68 @@ async def test_happy_path_sends_to_mapped_cleaner_with_phone():
     assert "9h" in notice.summary_fr
 
 
-async def test_beds24_failure_degrades_no_phone_default_cleaner():
+async def test_recent_messages_are_attached_and_fed_to_summarizer():
+    notifier = _StubNotifier()
+    summarizer = _StubSummarizer(_summary())
+    gateway = _StubGateway(
+        _booking(),
+        messages=[
+            GuestMessage(time="2026-07-26 08:00", author="guest", text="On part demain matin"),
+            GuestMessage(time="2026-07-26 08:05", author="host", text="Merci de nous prévenir !"),
+        ],
+    )
+    svc = _service(notifier, summarizer, gateway)
+
+    await svc.handle(_payload())
+
+    _, notice = notifier.sent[0]
+    # Raw exchange is in the notice (so the cleaner can second-guess the AI)…
+    assert "On part demain matin" in notice.conversation
+    assert "[2026-07-26 08:00 Voyageur]" in notice.conversation
+    assert "[2026-07-26 08:05 Hôte]" in notice.conversation
+    # …and it was handed to the summarizer as the transcript.
+    assert "On part demain matin" in summarizer.calls[0].transcript
+
+
+async def test_llm_french_translation_used_for_conversation():
+    notifier = _StubNotifier()
+    fr = "Voyageur : On part demain matin\nHôte : Merci de prévenir"
+    summarizer = _StubSummarizer(_summary(messages_fr=fr))
+    gateway = _StubGateway(
+        _booking(),
+        messages=[GuestMessage(time="t1", author="guest", text="Leaving tomorrow morning")],
+    )
+    svc = _service(notifier, summarizer, gateway)
+
+    await svc.handle(_payload())
+
+    _, notice = notifier.sent[0]
+    assert notice.conversation == fr                                   # French, not the raw English
+    assert "Leaving tomorrow morning" in summarizer.calls[0].transcript  # raw still fed to the LLM
+
+
+async def test_falls_back_to_payload_transcript_when_no_messages():
+    notifier = _StubNotifier()
+    gateway = _StubGateway(_booking(), messages=[])  # channel thread empty / direct booking
+    svc = _service(notifier, _StubSummarizer(_summary()), gateway)
+
+    await svc.handle(_payload(transcript="Guest: leaving at 9\nHost: ok"))
+
+    _, notice = notifier.sent[0]
+    assert notice.conversation == "Guest: leaving at 9\nHost: ok"
+
+
+async def test_beds24_failure_degrades_phone_but_still_routes_by_name():
     notifier = _StubNotifier()
     gateway = _StubGateway(error=BookingGatewayError("beds24 down"))
     svc = _service(notifier, _StubSummarizer(_summary()), gateway)
 
-    result = await svc.handle(_payload())
+    result = await svc.handle(_payload())  # property_name="Le Fernand"
 
     assert result["status"] == "sent"
     to_email, notice = notifier.sent[0]
-    assert to_email == "fallback@example.com"        # no propertyId → default
+    # No Beds24 → no propertyId, but the payload's property NAME still routes.
+    assert to_email == "vclean@example.com"
     assert notice.guest_phone == ""                  # degraded: no phone
 
 
@@ -151,7 +210,8 @@ async def test_unmapped_property_uses_default_cleaner():
     gateway = _StubGateway(_booking(property_id=111111))  # not in the map
     svc = _service(notifier, _StubSummarizer(_summary()), gateway)
 
-    await svc.handle(_payload())
+    # Unmapped by BOTH name and id → default cleaner.
+    await svc.handle(_payload(property_name="Chez Inconnu"))
     to_email, _ = notifier.sent[0]
     assert to_email == "fallback@example.com"
 

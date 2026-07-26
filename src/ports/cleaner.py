@@ -41,6 +41,8 @@ class DepartureNotice:
     certainty: str = ""          # "confirmed" | "estimated" | ""
     estimated_time: str | None = None
     guest_phone: str = ""        # included when known; blank line omitted otherwise
+    conversation: str = ""       # raw recent guest↔host messages, so the cleaner
+                                 # can sanity-check the AI's read; omitted if empty
 
 
 class CleanerNotifier(ABC):

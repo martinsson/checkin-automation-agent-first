@@ -54,6 +54,11 @@ _TOOL = {
                 "type": "string",
                 "description": "1-3 French sentences summarising the essentials for the cleaner.",
             },
+            "messages_fr": {
+                "type": "string",
+                "description": "The recent conversation messages translated to French, "
+                "one per line, prefixed 'Voyageur :' / 'Hôte :'. Empty if no transcript.",
+            },
         },
         "required": ["departure_status", "certainty", "summary_fr"],
     },
@@ -80,6 +85,7 @@ class DepartureSummary:
     summary_fr: str
     reason: str = ""
     estimated_time: str | None = None
+    messages_fr: str = ""    # recent messages translated to French for the cleaner
 
 
 class DepartureSummarizer:
@@ -125,6 +131,7 @@ class DepartureSummarizer:
             summary_fr=summary_fr,
             reason=str(data.get("reason") or "").strip(),
             estimated_time=str(est).strip() if est else None,
+            messages_fr=str(data.get("messages_fr") or "").strip(),
         )
 
     @staticmethod

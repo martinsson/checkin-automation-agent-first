@@ -37,6 +37,14 @@ class Reservation:
     price: float = 0.0       # total price in the account currency, 0 if unknown
 
 
+@dataclass
+class GuestMessage:
+    """One message in a booking's conversation thread."""
+    time: str        # provider datetime string, e.g. "2026-07-26 09:12:00"
+    author: str      # "guest" | "host" (host includes auto-actions); "" if unknown
+    text: str
+
+
 class BookingGatewayError(Exception):
     """Raised when the booking provider fails to read reservations or send a message."""
 
@@ -48,6 +56,17 @@ class GuestBookingGateway(ABC):
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         """Reservations arriving from today through today+days (live bookings only)."""
         ...
+
+    async def get_recent_messages(
+        self, booking_id: int, limit: int = 10
+    ) -> list[GuestMessage]:
+        """The booking's last `limit` conversation messages, oldest→newest.
+
+        Optional: the default returns none so a gateway that can't read threads
+        (or a test fake) need not implement it. Callers use this to give the
+        cleaner the raw recent exchange, so they can second-guess an AI
+        misread of the guest's intent."""
+        return []
 
     async def stays_overlapping(self, start: date, end: date) -> list[Reservation]:
         """

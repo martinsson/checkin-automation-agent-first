@@ -94,8 +94,18 @@ class DepartureNotificationService:
                 arrival = booking.arrival or ""
                 guest_name = guest_name or booking.guest_name
 
-        # 2. Resolve the property's cleaner (default fallback baked into the map).
-        contact = self._cleaner_map.for_property(property_id)
+        # 1b. Pull the recent conversation so the cleaner can verify the guest's
+        # intent themselves (HostBuddy's category/summary can be wrong). Real
+        # messages preferred; fall back to any transcript on the webhook payload.
+        conversation = await self._recent_conversation(payload)
+        if not conversation:
+            conversation = payload.transcript.strip()
+
+        # 2. Resolve the property's cleaner. Prefer the property NAME from the
+        # payload (works without Beds24), fall back to the enriched propertyId.
+        contact = self._cleaner_map.resolve(
+            property_name=payload.property_name, property_id=property_id
+        )
 
         # 3. Summarise (LLM), with a templated fallback.
         summary = self._summarizer.summarize(
@@ -106,7 +116,7 @@ class DepartureNotificationService:
                 property_name=payload.property_name,
                 arrival=arrival,
                 departure=departure_date,
-                transcript=payload.transcript,
+                transcript=conversation,
             )
         )
         if summary is None:
@@ -114,6 +124,11 @@ class DepartureNotificationService:
             used_llm = False
         else:
             used_llm = True
+
+        # The cleaner reads only French: prefer the LLM's French translation of
+        # the messages; the raw exchange is only a last-resort fallback (when the
+        # LLM step is unavailable, we can't translate).
+        conversation_fr = summary.messages_fr.strip() if summary.messages_fr.strip() else conversation
 
         # 4. Build and send the one-way notice.
         notice = DepartureNotice(
@@ -125,6 +140,7 @@ class DepartureNotificationService:
             certainty=summary.certainty,
             estimated_time=summary.estimated_time,
             guest_phone=phone,
+            conversation=conversation_fr,
         )
         try:
             tracking_id = await self._notifier.send_departure_notice(contact.email, notice)
@@ -142,6 +158,7 @@ class DepartureNotificationService:
                 "category": payload.category,
                 "cleaner_email": contact.email,
                 "phone_included": bool(phone),
+                "conversation_included": bool(conversation),
                 "used_llm": used_llm,
                 "departure_status": summary.departure_status,
                 "certainty": summary.certainty,
@@ -154,6 +171,30 @@ class DepartureNotificationService:
             payload.booking_id, payload.category, contact.email, used_llm, bool(phone),
         )
         return {"status": "sent", "tracking_id": tracking_id}
+
+    async def _recent_conversation(self, payload: DeparturePayload) -> str:
+        """Fetch and format the booking's recent messages. Empty on any failure
+        or when the gateway can't read the thread (e.g. direct bookings)."""
+        if self._booking_gateway is None:
+            return ""
+        try:
+            messages = await self._booking_gateway.get_recent_messages(
+                payload.booking_id, limit=8
+            )
+        except Exception as exc:  # never let a message read sink the notice
+            log.warning("Departure: reading messages failed for %s — %s",
+                        payload.booking_id, exc)
+            return ""
+        return self._format_conversation(messages)
+
+    @staticmethod
+    def _format_conversation(messages) -> str:
+        lines = []
+        for m in messages:
+            who = "Voyageur" if m.author == "guest" else ("Hôte" if m.author == "host" else "?")
+            stamp = f"{m.time} " if m.time else ""
+            lines.append(f"[{stamp}{who}] {m.text}")
+        return "\n".join(lines)
 
     @staticmethod
     def _fallback_summary(payload: DeparturePayload) -> DepartureSummary:

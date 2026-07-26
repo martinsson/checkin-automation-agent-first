@@ -1,32 +1,41 @@
-# Beds24 propertyId → cleaner contact (for departure notifications).
+# Cleaner routing for departure notifications.
 #
 # When a guest signals they have left or intend to leave early (HostBuddy
 # `guest_left` / `early_departure` action items), the departure-notification
 # flow emails THIS property's cleaner so they can plan to come earlier.
 #
-# Identities are seeded from scripts/cleaning_reconcile.py (V-Clean = Januario
-# Lima; Guilherme Veloso) and CLAUDE.md. propertyIds are the Beds24 ids.
+# Two independent parts:
+#   cleaners:     the roster — a cleaner "enum" key → their name + email.
+#   assignments:  who cleans what — property display name → cleaner key.
 #
-# ⚠️ TODO(owner): fill in the REAL cleaner email addresses below — the values
-# here are placeholders. A property with no entry (or a placeholder you leave
-# in) falls back to the CLEANER_EMAIL env var, so the notification still sends.
+# Property names MUST match config/beds24_properties.yaml (the same map the
+# /early-checkin form uses); that file resolves the name → Beds24 propertyId, so
+# it is NOT repeated here. Identities are seeded from scripts/cleaning_reconcile.py
+# (V-Clean = Januario Lima; Guilherme Veloso) and CLAUDE.md.
 #
-# TODO(owner): Velours T2 (318188) and Studio Écrin (318189) have no assigned
-# cleaner yet in cleaning_reconcile.py. Add them here once known; until then
-# they fall back to CLEANER_EMAIL.
+# Fallback: a property with no assignment — or one whose cleaner still has a
+# blank email below — falls back to the CLEANER_EMAIL env var, so the
+# notification is never dropped.
 
-properties:
-  326123:                       # Terracotta
-    name: "V-Clean (Januario Lima)"
-    email: ""                   # TODO(owner): real V-Clean address
-  326275:                       # La Palma
-    name: "V-Clean (Januario Lima)"
-    email: ""                   # TODO(owner): real V-Clean address
-  328510:                       # Le Fernand
-    name: "V-Clean (Januario Lima)"
-    email: ""                   # TODO(owner): real V-Clean address
-  326234:                       # Le Matisse
-    name: "Guilherme Veloso"
-    email: ""                   # TODO(owner): real Guilherme Veloso address
-  # 318188:  Velours T2    — TODO(owner): assign cleaner + email
-  # 318189:  Studio Écrin  — TODO(owner): assign cleaner + email
+cleaners:
+  v_clean:
+    name: "Jose Duarte Lima (V-Clean)"
+    email: "vcleangrenoble@gmail.com"
+  virginie:
+    name: "Virginie Lourenço Veloso"
+    email: "labelportos@hotmail.fr"
+
+# Keys must match the webhook's `property_name`. HostBuddy's property titles (see
+# its UI) mostly match config/beds24_properties.yaml, except Le Fernand — so both
+# spellings are listed. An unrecognised property still notifies safely: it falls
+# back to CLEANER_EMAIL (the owner), never a wrong cleaner.
+# TODO(owner): confirm the exact property_name string from the first real capture
+# at /captures, then prune any alias that never arrives.
+assignments:
+  Terracotta: v_clean
+  La Palma:   v_clean
+  "Le Fernand | Campus Parking": v_clean   # HostBuddy title
+  Le Fernand: v_clean                        # Beds24 name (id fallback)
+  Le Matisse: virginie
+  Studio Écrin: v_clean
+  Velours T2:   v_clean

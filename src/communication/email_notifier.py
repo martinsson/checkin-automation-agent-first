@@ -61,6 +61,7 @@ class EmailCleanerNotifier(CleanerNotifier):
         cleaner_email: str,
         anthropic_api_key: str | None = None,
         dry_run: bool = False,
+        copy_to: str = "",
     ):
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
@@ -70,6 +71,8 @@ class EmailCleanerNotifier(CleanerNotifier):
         self._imap_port = imap_port
         self._cleaner_email = cleaner_email
         self._dry_run = dry_run
+        # Optional silent BCC of departure notices to the owner; "" = no copy.
+        self._copy_to = (copy_to or "").strip()
         # Track which message UIDs we've already processed
         self._seen_uids: set[int] = set()
 
@@ -119,10 +122,16 @@ class EmailCleanerNotifier(CleanerNotifier):
         msg["Subject"] = subject
         msg["Message-ID"] = message_id
 
+        # Silent BCC copy to the owner (kept out of the headers), deduped so we
+        # don't double-send when the copy address equals the cleaner's.
+        recipients = [to_email]
+        if self._copy_to and self._copy_to != to_email:
+            recipients.append(self._copy_to)
+
         if self._dry_run:
             log.info(
-                "[DRY RUN] Would send departure notice to %s\nSubject: %s\n\n%s",
-                to_email, subject, body,
+                "[DRY RUN] Would send departure notice to %s (copy: %s)\nSubject: %s\n\n%s",
+                to_email, self._copy_to or "—", subject, body,
             )
             return message_id
 
@@ -130,10 +139,10 @@ class EmailCleanerNotifier(CleanerNotifier):
             with smtplib.SMTP(self._smtp_host, self._smtp_port) as smtp:
                 smtp.starttls()
                 smtp.login(self._smtp_user, self._smtp_password)
-                smtp.sendmail(self._smtp_user, to_email, msg.as_string())
+                smtp.sendmail(self._smtp_user, recipients, msg.as_string())
             log.info(
-                "Departure notice sent to %s subject=%r tracking=%s",
-                to_email, subject, message_id,
+                "Departure notice sent to %s (copy=%s) subject=%r tracking=%s",
+                to_email, self._copy_to or "—", subject, message_id,
             )
         except Exception as exc:
             log.error("Failed to send departure notice: %s", exc)
@@ -245,6 +254,15 @@ class EmailCleanerNotifier(CleanerNotifier):
 
         if notice.guest_phone.strip():
             lines += ["", f"Téléphone du voyageur : {notice.guest_phone.strip()}"]
+
+        if notice.conversation.strip():
+            lines += [
+                "",
+                "— Derniers messages échangés avec le voyageur (pour vérifier "
+                "vous-même l'intention) :",
+                notice.conversation.strip(),
+                "—",
+            ]
 
         lines += [
             "",

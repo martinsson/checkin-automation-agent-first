@@ -25,6 +25,11 @@ Tu DOIS appeler l'outil `report_departure` avec :
 - `summary_fr` : 1 à 3 phrases, en français, résumant l'essentiel pour l'agent
   d'entretien : est-ce un départ confirmé ou une estimation, et l'heure si
   connue. Sois factuel et bref. N'invente rien qui ne soit pas dans les données.
+- `messages_fr` : les derniers messages pertinents de la conversation, TRADUITS
+  EN FRANÇAIS (l'agent d'entretien ne lit que le français). Garde un message par
+  ligne, préfixé de l'auteur : « Voyageur : … » ou « Hôte : … ». Traduis
+  fidèlement sans résumer ni inventer ; laisse en français ce qui l'est déjà.
+  Chaîne vide si aucun extrait de conversation n'est fourni.
 
 Ne fais aucune supposition au-delà de ce qui est fourni. Si l'heure n'est pas
 donnée, laisse `estimated_time` à null et n'invente pas d'horaire.
