@@ -1,0 +1,32 @@
+# Beds24 propertyId → cleaner contact (for departure notifications).
+#
+# When a guest signals they have left or intend to leave early (HostBuddy
+# `guest_left` / `early_departure` action items), the departure-notification
+# flow emails THIS property's cleaner so they can plan to come earlier.
+#
+# Identities are seeded from scripts/cleaning_reconcile.py (V-Clean = Januario
+# Lima; Guilherme Veloso) and CLAUDE.md. propertyIds are the Beds24 ids.
+#
+# ⚠️ TODO(owner): fill in the REAL cleaner email addresses below — the values
+# here are placeholders. A property with no entry (or a placeholder you leave
+# in) falls back to the CLEANER_EMAIL env var, so the notification still sends.
+#
+# TODO(owner): Velours T2 (318188) and Studio Écrin (318189) have no assigned
+# cleaner yet in cleaning_reconcile.py. Add them here once known; until then
+# they fall back to CLEANER_EMAIL.
+
+properties:
+  326123:                       # Terracotta
+    name: "V-Clean (Januario Lima)"
+    email: ""                   # TODO(owner): real V-Clean address
+  326275:                       # La Palma
+    name: "V-Clean (Januario Lima)"
+    email: ""                   # TODO(owner): real V-Clean address
+  328510:                       # Le Fernand
+    name: "V-Clean (Januario Lima)"
+    email: ""                   # TODO(owner): real V-Clean address
+  326234:                       # Le Matisse
+    name: "Guilherme Veloso"
+    email: ""                   # TODO(owner): real Guilherme Veloso address
+  # 318188:  Velours T2    — TODO(owner): assign cleaner + email
+  # 318189:  Studio Écrin  — TODO(owner): assign cleaner + email

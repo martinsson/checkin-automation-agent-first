@@ -15,7 +15,12 @@ from email.mime.text import MIMEText
 
 import imapclient
 
-from src.ports.cleaner import CleanerNotifier, CleanerQuery, CleanerResponse
+from src.ports.cleaner import (
+    CleanerNotifier,
+    CleanerQuery,
+    CleanerResponse,
+    DepartureNotice,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +107,40 @@ class EmailCleanerNotifier(CleanerNotifier):
 
         return message_id
 
+    async def send_departure_notice(self, to_email: str, notice: DepartureNotice) -> str:
+        """Send a one-way departure notice to a per-property cleaner address."""
+        subject = self._make_departure_subject(notice)
+        body = self._build_departure_body(notice)
+        message_id = f"<{uuid.uuid4().hex}@checkin-automation>"
+
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["From"] = self._smtp_user
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg["Message-ID"] = message_id
+
+        if self._dry_run:
+            log.info(
+                "[DRY RUN] Would send departure notice to %s\nSubject: %s\n\n%s",
+                to_email, subject, body,
+            )
+            return message_id
+
+        try:
+            with smtplib.SMTP(self._smtp_host, self._smtp_port) as smtp:
+                smtp.starttls()
+                smtp.login(self._smtp_user, self._smtp_password)
+                smtp.sendmail(self._smtp_user, to_email, msg.as_string())
+            log.info(
+                "Departure notice sent to %s subject=%r tracking=%s",
+                to_email, subject, message_id,
+            )
+        except Exception as exc:
+            log.error("Failed to send departure notice: %s", exc)
+            raise
+
+        return message_id
+
     async def poll_responses(self) -> list[CleanerResponse]:
         """Poll IMAP inbox for replies from the cleaner."""
         responses: list[CleanerResponse] = []
@@ -168,6 +207,49 @@ class EmailCleanerNotifier(CleanerNotifier):
             query.message,
             "",
             "Pouvez-vous nous dire si c'est possible ? Répondez simplement à cet e-mail.",
+            "",
+            "Merci !",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _make_departure_subject(notice: DepartureNotice) -> str:
+        if notice.departure_status == "already_left":
+            label = "voyageur parti"
+        elif notice.departure_status == "leaving_early":
+            label = "départ anticipé"
+        else:
+            label = "départ voyageur"
+        prop = notice.property_name or "logement"
+        return f"[Ménage] {prop} — {label}"
+
+    @staticmethod
+    def _build_departure_body(notice: DepartureNotice) -> str:
+        lines = [
+            "Bonjour,",
+            "",
+            f"Information concernant {notice.property_name or 'un logement'} "
+            f"(voyageur : {notice.guest_name or '?'}, "
+            f"départ prévu le {notice.departure_date or '?'}).",
+            "",
+            notice.summary_fr.strip(),
+        ]
+        if notice.certainty == "estimated":
+            detail = "Il s'agit d'une estimation"
+            if notice.estimated_time:
+                detail += f" (heure annoncée : {notice.estimated_time})"
+            detail += " — à confirmer si besoin."
+            lines += ["", detail]
+        elif notice.certainty == "confirmed":
+            lines += ["", "Départ confirmé."]
+
+        if notice.guest_phone.strip():
+            lines += ["", f"Téléphone du voyageur : {notice.guest_phone.strip()}"]
+
+        lines += [
+            "",
+            "Vous pouvez éventuellement prévoir de passer plus tôt. "
+            "Ce message est informatif, aucune réponse n'est requise.",
             "",
             "Merci !",
         ]

@@ -16,6 +16,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 _HANDLED_CATEGORIES = {"early_checkin", "late_checkout"}
+# Departure-forward signals → the one-way cleaner-notification flow (not the
+# early/late-checkout agent). Both mean the cleaner may be able to come earlier.
+# TODO(owner): confirm these exact category strings against the Custom Action
+# Item Categories you configure in the HostBuddy dashboard, then adjust here.
+_DEPARTURE_CATEGORIES = {"guest_left", "early_departure"}
 
 
 class HostBuddyPayload(BaseModel):
@@ -23,6 +28,10 @@ class HostBuddyPayload(BaseModel):
     Normalised shape of a HostBuddy action item webhook.
 
     Unknown fields are ignored (model_config extra='ignore').
+
+    TODO(owner): finalise these field names/casing against a real captured
+    HostBuddy POST — the payload schema is not publicly documented. `extra`
+    stays 'ignore' so an unexpected/renamed field won't 422 us in the meantime.
     """
 
     model_config = {"extra": "ignore"}
@@ -33,6 +42,10 @@ class HostBuddyPayload(BaseModel):
     guest_name: str = ""
     property_name: str = ""
     message_summary: str = ""
+    # Optional: present only if a HostBuddy Journey/webhook can be configured to
+    # include a recent-conversation excerpt (to verify in the dashboard). When
+    # absent the departure flow falls back to message_summary.
+    transcript: str = ""
 
 
 @router.post("/webhook/hostbuddy")
@@ -47,6 +60,10 @@ async def hostbuddy_webhook(request: Request):
     except Exception as exc:
         log.warning("HostBuddy webhook: failed to parse body — %s", exc)
         return JSONResponse(status_code=422, content={"error": "parse error"})
+
+    # Departure-forward signals go to the one-way cleaner-notification flow.
+    if payload.category in _DEPARTURE_CATEGORIES:
+        return await _handle_departure(request, payload)
 
     # Ignore categories we don't handle
     if payload.category not in _HANDLED_CATEGORIES:
@@ -116,6 +133,42 @@ async def hostbuddy_webhook(request: Request):
     )
 
     return JSONResponse({"status": "accepted", "request_id": request_id})
+
+
+async def _handle_departure(request: Request, payload: HostBuddyPayload) -> JSONResponse:
+    """Route a departure action item to the one-way cleaner notification flow."""
+    service = getattr(request.app.state, "departure_service", None)
+    if service is None:
+        log.error("HostBuddy webhook: departure_service not configured — cannot notify")
+        return JSONResponse(status_code=503, content={"error": "departure flow unavailable"})
+
+    memory = request.app.state.memory
+    # HTTP-level idempotency on the literal delivery (the service also dedups per
+    # booking+category). Mark only after a successful handle so a transient send
+    # failure can be retried by a re-delivery.
+    if await memory.has_action_item_been_seen(payload.action_item_id):
+        log.info("HostBuddy webhook: duplicate departure action_item_id=%s",
+                 payload.action_item_id)
+        return JSONResponse({"status": "duplicate"})
+
+    from src.departure.service import DeparturePayload
+
+    result = await service.handle(
+        DeparturePayload(
+            action_item_id=payload.action_item_id,
+            booking_id=int(payload.booking_id),
+            category=payload.category,
+            guest_name=payload.guest_name,
+            property_name=payload.property_name,
+            message_summary=payload.message_summary,
+            transcript=payload.transcript,
+        )
+    )
+
+    if result.get("status") in ("sent", "duplicate"):
+        await memory.mark_action_item_seen(payload.action_item_id)
+
+    return JSONResponse({"status": result.get("status", "error")})
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,14 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from src.ports.memory import AgentEvent, Draft, ProcessedRequest, RequestMemory, RequestStatus
+from src.ports.memory import (
+    AgentEvent,
+    Draft,
+    ProcessedRequest,
+    RequestMemory,
+    RequestStatus,
+    WebhookCapture,
+)
 
 _MIGRATIONS = [
     "ALTER TABLE requests ADD COLUMN guest_name TEXT NOT NULL DEFAULT ''",
@@ -61,6 +68,14 @@ CREATE TABLE IF NOT EXISTS agent_events (
     event_type     TEXT NOT NULL,
     payload_json   TEXT NOT NULL DEFAULT '{}',
     created_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS webhook_captures (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    path         TEXT NOT NULL,
+    method       TEXT NOT NULL,
+    headers_json TEXT NOT NULL DEFAULT '{}',
+    body         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL
 );
 """
 
@@ -230,6 +245,39 @@ class SqliteRequestMemory(RequestMemory):
                 reservation_id=row["reservation_id"],
                 event_type=row["event_type"],
                 payload=json.loads(row["payload_json"]),
+                created_at=_parse_dt(row["created_at"]),
+            )
+            for row in rows
+        ]
+
+    # -- raw webhook capture ---------------------------------------------------
+
+    async def log_webhook_capture(
+        self,
+        path: str,
+        method: str,
+        headers: dict,
+        body: str,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO webhook_captures (path, method, headers_json, body, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (path, method, json.dumps(headers), body, _now()),
+        )
+        self._conn.commit()
+
+    async def get_webhook_captures(self, limit: int = 50) -> list[WebhookCapture]:
+        rows = self._conn.execute(
+            "SELECT * FROM webhook_captures ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            WebhookCapture(
+                id=row["id"],
+                path=row["path"],
+                method=row["method"],
+                headers=json.loads(row["headers_json"]),
+                body=row["body"],
                 created_at=_parse_dt(row["created_at"]),
             )
             for row in rows

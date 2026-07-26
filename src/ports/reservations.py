@@ -28,6 +28,7 @@ class Reservation:
     channel: str = "" # e.g. "airbnb", "booking", "direct" — for display
     status: str = ""
     language: str = ""  # guest's preferred language code, e.g. "fr" / "en"
+    phone: str = ""   # guest phone (Beds24 `phone`/`mobile`); "" when unknown
     source: str = SOURCE_BEDS24  # which PMS owns this booking — routes the message send
     # Change tracking (occupancy page's stays/changes sections). Provider-native
     # datetime strings, parsed leniently by the caller; empty when unknown.

@@ -22,6 +22,9 @@ class _StubNotifier(CleanerNotifier):
     async def poll_responses(self) -> list[CleanerResponse]:
         return []
 
+    async def send_departure_notice(self, to_email: str, notice) -> str:
+        return "departure-msg-id-stub"
+
 
 def _make_tool_response(tool_name: str, tool_input: dict):
     """Build a fake Anthropic response with one tool_use block."""

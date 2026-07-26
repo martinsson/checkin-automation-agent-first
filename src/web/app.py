@@ -99,6 +99,26 @@ def create_app() -> FastAPI:
 
     agent = AgentRunner(memory=memory, cleaner_notifier=cleaner_notifier, door_lock=door_lock)
 
+    # Departure-notification flow (HostBuddy `guest_left` / `early_departure` →
+    # one-way email to the property's cleaner). Beds24 gateway enriches the phone
+    # + propertyId; the cleaner map routes per property (falls back to
+    # CLEANER_EMAIL). Absent Beds24 tokens → still works, just without phone.
+    from src.config.cleaner_map import CleanerMap
+    from src.departure.service import DepartureNotificationService
+    from src.departure.summarizer import DepartureSummarizer
+
+    cleaner_map = CleanerMap.from_yaml(
+        default_email=os.environ.get("CLEANER_EMAIL", "").strip(),
+        default_name=os.environ.get("CLEANER_NAME", "Équipe ménage"),
+    )
+    departure_service = DepartureNotificationService(
+        memory=memory,
+        notifier=cleaner_notifier,
+        cleaner_map=cleaner_map,
+        summarizer=DepartureSummarizer(anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY")),
+        booking_gateway=booking_gateway,  # Beds24; may be None if unconfigured
+    )
+
     application = FastAPI(title="Checkin Review", docs_url=None, redoc_url=None)
     application.state.review_token = review_token
     application.state.memory = memory
@@ -106,11 +126,18 @@ def create_app() -> FastAPI:
     application.state.door_lock = door_lock
     application.state.booking_gateway = booking_gateway
     application.state.smoobu_gateway = smoobu_gateway
+    application.state.departure_service = departure_service
+
+    from src.web.webhook_capture import WebhookCaptureMiddleware
+    from src.web.webhook_capture import router as capture_router
 
     application.add_middleware(AuthMiddleware, review_token=review_token)
+    # Outermost: capture every raw POST /webhook/* before auth/routing touches it.
+    application.add_middleware(WebhookCaptureMiddleware)
     application.include_router(auth_router)
     application.include_router(review_router)
     application.include_router(webhook_router)
+    application.include_router(capture_router)
     application.include_router(contact_router)
     application.include_router(door_codes_router)
     application.include_router(early_checkin_router)

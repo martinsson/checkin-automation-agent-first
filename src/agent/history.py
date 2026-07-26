@@ -26,6 +26,7 @@ _EVENT_LABELS = {
     "cleaner_email_sent": "CLEANER EMAIL SENT",
     "cleaner_reply": "CLEANER REPLY RECEIVED",
     "guest_draft_created": "GUEST REPLY DRAFT CREATED (awaiting owner review)",
+    "departure_notified": "DEPARTURE NOTICE SENT TO CLEANER",
     "wait": "WAIT (no action taken)",
 }
 

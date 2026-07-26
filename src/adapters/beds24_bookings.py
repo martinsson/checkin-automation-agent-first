@@ -51,6 +51,7 @@ def _to_reservation(b: dict) -> Reservation:
         booking_time=(b.get("bookingTime") or "").strip(),
         modified_time=(b.get("modifiedTime") or "").strip(),
         price=float(b.get("price") or 0),
+        phone=(str(b.get("phone") or "").strip() or str(b.get("mobile") or "").strip()),
     )
 
 
@@ -66,6 +67,35 @@ class Beds24BookingGateway(GuestBookingGateway):
         self._timeout = timeout
         self._write_token = ""
         self._write_token_expiry = 0.0  # monotonic seconds
+
+    async def get_booking(self, booking_id: int) -> Reservation | None:
+        """Fetch one booking by id, enriched with the guest phone.
+
+        Used by the departure-notification flow to resolve the guest phone,
+        propertyId (for cleaner routing) and dates from a HostBuddy webhook that
+        only carries a booking id. The long-life read token has
+        `read:bookings+personal`, so `phone`/`mobile` come back without any extra
+        flag. Returns None when the booking can't be found or read (the caller
+        degrades to the webhook payload without a phone). Raises
+        BookingGatewayError only on transport/HTTP failures the caller may log."""
+        params = {"id": [int(booking_id)]}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{_BASE}/bookings",
+                    params=params,
+                    headers={"token": self._read_token, "accept": "application/json"},
+                )
+        except httpx.HTTPError as exc:
+            raise BookingGatewayError(f"Beds24 booking lookup failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise BookingGatewayError(
+                f"Beds24 booking lookup returned HTTP {resp.status_code}: {resp.text[:200]}"
+            )
+        data = resp.json().get("data", []) or []
+        if not data:
+            return None
+        return _to_reservation(data[0])
 
     async def upcoming_arrivals(self, days: int) -> list[Reservation]:
         today = date.today()

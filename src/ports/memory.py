@@ -157,6 +157,29 @@ class RequestMemory(ABC):
         """Return all agent events for a reservation, oldest first."""
         ...
 
+    # -- raw webhook capture (payload reverse-engineering) --------------------
+
+    @abstractmethod
+    async def log_webhook_capture(
+        self,
+        path: str,
+        method: str,
+        headers: dict,
+        body: str,
+    ) -> None:
+        """Persist a raw incoming webhook delivery, verbatim.
+
+        Deliberately dumb: stores the body before any parsing/validation so we
+        can compare the real shapes of different HostBuddy action-item
+        categories against each other (their schema isn't documented).
+        """
+        ...
+
+    @abstractmethod
+    async def get_webhook_captures(self, limit: int = 50) -> list["WebhookCapture"]:
+        """Return the most recent webhook captures, newest first."""
+        ...
+
 
 @dataclass
 class AgentEvent:
@@ -164,4 +187,14 @@ class AgentEvent:
     event_type: str    # e.g. "hostbuddy_action_item", "cleaner_email_sent",
                        #      "cleaner_reply", "guest_draft_created", "wait"
     payload: dict
+    created_at: datetime
+
+
+@dataclass
+class WebhookCapture:
+    id: int
+    path: str
+    method: str
+    headers: dict          # incoming request headers (lower-cased keys)
+    body: str              # raw request body, verbatim
     created_at: datetime

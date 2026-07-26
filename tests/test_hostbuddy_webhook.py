@@ -24,6 +24,18 @@ class _StubAgent:
         )
 
 
+class _StubDepartureService:
+    """Records departure handoffs without enrichment/LLM/email."""
+
+    def __init__(self, status="sent"):
+        self.calls: list = []
+        self._status = status
+
+    async def handle(self, payload):
+        self.calls.append(payload)
+        return {"status": self._status}
+
+
 def _make_test_app():
     import os
     os.environ.setdefault("REVIEW_TOKEN", "test-token")
@@ -36,10 +48,11 @@ def _make_test_app():
     os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
     app = create_app()
-    # Override memory with in-memory sqlite and inject stub agent
+    # Override memory with in-memory sqlite and inject stub agent + departure svc
     app.state.memory = SqliteRequestMemory(":memory:")
     stub_agent = _StubAgent()
     app.state.agent = stub_agent
+    app.state.departure_service = _StubDepartureService()
     return app, stub_agent
 
 
@@ -116,3 +129,64 @@ def test_duplicate_action_item_ignored():
 
     # Agent only called once
     assert len(stub_agent.calls) == 1
+
+
+# -- departure categories → one-way cleaner notification flow -----------------
+
+_DEPARTURE_PAYLOAD = {
+    "action_item_id": "dep-1",
+    "booking_id": "77",
+    "category": "guest_left",
+    "guest_name": "Bob",
+    "property_name": "Le Fernand",
+    "message_summary": "We've just left the apartment, keys on the table.",
+}
+
+
+def test_guest_left_routes_to_departure_service():
+    app, stub_agent = _make_test_app()
+    client = TestClient(app, raise_server_exceptions=True)
+
+    resp = client.post("/webhook/hostbuddy", json=_DEPARTURE_PAYLOAD)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "sent"
+    dep = app.state.departure_service
+    assert len(dep.calls) == 1
+    assert dep.calls[0].booking_id == 77
+    assert dep.calls[0].category == "guest_left"
+    # The early/late-checkout agent must NOT be involved.
+    assert len(stub_agent.calls) == 0
+
+
+def test_early_departure_routes_to_departure_service():
+    app, _ = _make_test_app()
+    client = TestClient(app, raise_server_exceptions=True)
+
+    payload = {**_DEPARTURE_PAYLOAD, "category": "early_departure", "action_item_id": "dep-2"}
+    resp = client.post("/webhook/hostbuddy", json=payload)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "sent"
+    assert app.state.departure_service.calls[0].category == "early_departure"
+
+
+def test_departure_duplicate_delivery_not_reprocessed():
+    app, _ = _make_test_app()
+    client = TestClient(app, raise_server_exceptions=True)
+
+    r1 = client.post("/webhook/hostbuddy", json=_DEPARTURE_PAYLOAD)
+    r2 = client.post("/webhook/hostbuddy", json=_DEPARTURE_PAYLOAD)
+
+    assert r1.json()["status"] == "sent"
+    assert r2.json()["status"] == "duplicate"
+    assert len(app.state.departure_service.calls) == 1
+
+
+def test_departure_service_unavailable_returns_503():
+    app, _ = _make_test_app()
+    app.state.departure_service = None
+    client = TestClient(app, raise_server_exceptions=True)
+
+    resp = client.post("/webhook/hostbuddy", json=_DEPARTURE_PAYLOAD)
+    assert resp.status_code == 503
