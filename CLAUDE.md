@@ -58,21 +58,8 @@ booking — don't just delete it if a long-term block should remain afterward.
 ## Cleaning invoice reconciliation
 
 `scripts/cleaning_reconcile.py` checks the monthly cleaner invoices against
-Beds24 turnovers (a cleaning = one guest check-out). Deterministic, no LLM:
-counts departures with status `confirmed`/`new` per property, parses the two
-known invoice PDF templates (V-Clean / Guilherme Veloso) via `pdftotext`, and
-diffs claimed quantity + listed dates. Extra-charge lines (lit d'appoint, housse
-canapé) are auto-skipped.
-
-```bash
-# --month defaults to the previous calendar month:
-python3 scripts/cleaning_reconcile.py ~/Downloads/F-*.pdf ~/Downloads/350-*.pdf
-```
-
-Property/cleaner/rate map is the `PROPERTIES` table at the top of the script; add
-rows there for new cleaners or the not-yet-covered flats (Velours T2, Studio
-Écrin). Uses `BEDS24_READ_ALL_TOKEN`. Cleaners: **V-Clean** (Januario Lima —
-Terracotta/La Palma €35, Le Fernand €65) and **Guilherme Veloso** (Le Matisse €60).
+Beds24 turnovers. Runbook: the `cleaning-invoice-check` skill →
+[docs/cleaning-invoice-reconciliation.md](./docs/cleaning-invoice-reconciliation.md).
 
 ## Payment reconciliation (direct bookings)
 
